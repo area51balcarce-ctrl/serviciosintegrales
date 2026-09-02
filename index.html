@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SERVICIOS INTEGRALES | Estado de cuenta</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="app-shell">
+    <section class="hero">
+      <div>
+        <span class="badge">SERVICIOS INTEGRALES · Uso interno</span>
+        <h1>Estado de cuenta</h1>
+        <p>Consultá el estado actual del cliente por CUIL y organismo.</p>
+      </div>
+      <div class="hero-status"><span class="status-dot"></span><span>V1 lista para conectar</span></div>
+    </section>
+
+    <section class="search-card">
+      <div class="form-grid">
+        <label><span>CUIL</span><input id="cuilInput" type="text" inputmode="numeric" maxlength="13" placeholder="Ej. 27-29375903-6" autocomplete="off" /></label>
+        <label><span>Organismo</span><select id="organismoSelect"><option value="MUNICIPALIDAD">MUNICIPALIDAD</option><option value="HOSPITAL">HOSPITAL</option></select></label>
+      </div>
+      <div class="actions"><button id="consultarBtn" type="button">Consultar estado de cuenta</button><button id="limpiarBtn" type="button" class="secondary">Limpiar</button></div>
+      <p class="helper">La pantalla ya está armada. La integración automática con Creditan queda aislada en <strong>connector.js</strong>.</p>
+    </section>
+
+    <section id="messageBox" class="message hidden" aria-live="polite"></section>
+
+    <section id="clientCard" class="client-card hidden">
+      <div class="client-head"><div><span class="eyebrow">CLIENTE</span><h2 id="clientName">—</h2><p id="clientCuil">—</p></div><div class="organismo-pill" id="clientOrganismo">—</div></div>
+      <div class="summary-grid"><article><span>Operaciones vigentes</span><strong id="vigentesCount">0</strong></article><article><span>Cuota mensual total</span><strong id="cuotaTotal">$ 0,00</strong></article><article><span>Saldo capital total</span><strong id="saldoTotal">$ 0,00</strong></article></div>
+      <div class="section-title"><div><span class="eyebrow">ESTADO ACTUAL</span><h3>Créditos vigentes</h3></div></div>
+      <div id="creditsList" class="credits-list"></div>
+    </section>
+  </main>
+
+  <template id="creditTemplate">
+    <article class="credit-card">
+      <div class="credit-top"><div><span class="credit-status">VIGENTE</span><h4>Operación <span data-field="operacion"></span></h4><p>Solicitud <span data-field="solicitud"></span></p></div><div class="capital-box"><span>Capital original</span><strong data-field="capital"></strong></div></div>
+      <div class="credit-grid"><div><span>Cuotas</span><strong data-field="cuotas"></strong></div><div><span>Valor cuota</span><strong data-field="valorCuota"></strong></div><div><span>Próximo período</span><strong data-field="proximoPeriodo"></strong></div><div><span>Saldo capital</span><strong class="saldo-highlight" data-field="saldoCapital"></strong></div></div>
+      <details class="details"><summary>Ver todas las cuotas</summary><div class="table-wrap"><table><thead><tr><th>Cuota</th><th>Vence</th><th>Monto</th><th>Saldo</th><th>Saldo capital</th></tr></thead><tbody data-field="cuotasTable"></tbody></table></div></details>
+    </article>
+  </template>
+
+  <script src="connector.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
