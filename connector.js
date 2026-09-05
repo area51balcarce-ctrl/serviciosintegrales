@@ -3,7 +3,7 @@
 
   const SOURCE_APP = "SERVICIOS_INTEGRALES";
   const SOURCE_BRIDGE = "SERVICIOS_INTEGRALES_CREDITAN_BRIDGE";
-  const DEFAULT_TIMEOUT_MS = 30000;
+  const DEFAULT_TIMEOUT_MS = 120000;
 
   function crearId() {
     if (window.crypto && typeof window.crypto.randomUUID === "function") {
@@ -117,7 +117,7 @@
   }
 
   window.ServiciosIntegralesConnector = {
-    version: "2.0.0",
+    version: "2.0.1",
 
     async consultarEstadoCuenta({ cuil, organismo }) {
       const cuilLimpio = limpiarCuil(cuil);
