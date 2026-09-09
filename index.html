@@ -9,12 +9,39 @@
 <body>
   <main class="app-shell">
     <section class="hero">
-      <div>
+      <div class="hero-copy">
         <span class="badge">SERVICIOS INTEGRALES · Uso interno</span>
         <h1>Estado de cuenta</h1>
         <p>Consultá el estado actual del cliente por CUIL y organismo.</p>
       </div>
-      <div class="hero-status"><span class="status-dot"></span><span>V1 lista para conectar</span></div>
+
+      <div class="hero-tools">
+        <section class="cupo-panel" aria-label="Calculador de cupo">
+          <div class="cupo-panel-title">CALCULADOR DE CUPO</div>
+
+          <div class="cupo-upload">
+            <strong>Adjuntar recibo de sueldo</strong>
+            <p>Solo PDF original. No fotos, capturas ni escaneos.</p>
+            <input id="reciboPdf" type="file" accept="application/pdf,.pdf" />
+          </div>
+
+          <button type="button" id="btnCalcular" class="cupo-button">Calcular cupo</button>
+
+          <div id="alertBox" class="alert"></div>
+
+          <div id="resultCard" class="result">
+            <small>Cupo final</small>
+            <div class="result-value" id="cupoFinal">$ 0,00</div>
+            <div class="result-note" id="resultNote">Resultado calculado sobre el PDF cargado.</div>
+            <div class="meta" id="resultMeta"></div>
+          </div>
+        </section>
+
+        <div class="hero-status">
+          <span class="status-dot"></span>
+          <span>V1 lista para conectar</span>
+        </div>
+      </div>
     </section>
 
     <section class="search-card">
@@ -46,5 +73,6 @@
 
   <script src="connector.js"></script>
   <script src="app.js"></script>
+  <script type="module" src="cupo.js"></script>
 </body>
 </html>
