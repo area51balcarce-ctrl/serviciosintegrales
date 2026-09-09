@@ -186,3 +186,105 @@
     font-size:30px;
   }
 }
+
+
+/* ============================================================
+   FICHA INTERNA CONSOLIDADA
+   Solo reúne datos ya calculados/consultados. No recalcula nada.
+   ============================================================ */
+
+.ficha-card{
+  margin-top:20px;
+  padding:24px;
+  border:1px solid var(--line);
+  border-radius:22px;
+  background:linear-gradient(180deg,#ffffff 0%,#fbfefc 100%);
+  box-shadow:var(--shadow);
+}
+
+.ficha-head{
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+  gap:18px;
+  padding-bottom:18px;
+  border-bottom:1px solid var(--line);
+}
+
+.ficha-head h2{
+  margin:5px 0 0;
+  font-size:26px;
+}
+
+.ficha-identidad{
+  display:grid;
+  grid-template-columns:2fr 1fr;
+  gap:14px;
+  margin-top:18px;
+}
+
+.ficha-identidad article,
+.ficha-resumen-grid article{
+  padding:16px 18px;
+  border:1px solid var(--line);
+  border-radius:16px;
+  background:#fbfdfb;
+}
+
+.ficha-identidad span,
+.ficha-resumen-grid span{
+  display:block;
+  margin-bottom:7px;
+  color:var(--muted);
+  font-size:12px;
+}
+
+.ficha-identidad strong{
+  font-size:20px;
+}
+
+.ficha-identidad-principal strong{
+  font-size:24px;
+  color:var(--text);
+}
+
+.ficha-resumen-grid{
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  gap:14px;
+  margin-top:14px;
+}
+
+.ficha-resumen-grid strong{
+  font-size:21px;
+}
+
+.ficha-cupo strong{
+  color:var(--brand-dark);
+}
+
+.ficha-cupo.negative{
+  border-color:#efc1c1;
+  background:#fff3f3;
+}
+
+.ficha-cupo.negative strong{
+  color:#b42318;
+}
+
+@media(max-width:900px){
+  .ficha-resumen-grid{
+    grid-template-columns:repeat(2,1fr);
+  }
+}
+
+@media(max-width:760px){
+  .ficha-head{
+    flex-direction:column;
+  }
+
+  .ficha-identidad,
+  .ficha-resumen-grid{
+    grid-template-columns:1fr;
+  }
+}
