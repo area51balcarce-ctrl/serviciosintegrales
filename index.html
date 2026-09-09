@@ -55,6 +55,46 @@
 
     <section id="messageBox" class="message hidden" aria-live="polite"></section>
 
+    <section id="fichaConsolidada" class="ficha-card hidden" aria-label="Ficha interna consolidada del cliente">
+      <div class="ficha-head">
+        <div>
+          <span class="eyebrow">FICHA INTERNA CONSOLIDADA</span>
+          <h2>Resumen del cliente</h2>
+        </div>
+        <div class="organismo-pill" id="fichaOrganismo">—</div>
+      </div>
+
+      <div class="ficha-identidad">
+        <article class="ficha-identidad-principal">
+          <span>Nombre y Apellido</span>
+          <strong id="fichaNombre">—</strong>
+        </article>
+        <article>
+          <span>CUIL</span>
+          <strong id="fichaCuil">—</strong>
+        </article>
+      </div>
+
+      <div class="ficha-resumen-grid">
+        <article class="ficha-cupo">
+          <span>Cupo calculado</span>
+          <strong id="fichaCupo">Pendiente</strong>
+        </article>
+        <article>
+          <span>Créditos vigentes</span>
+          <strong id="fichaVigentes">0</strong>
+        </article>
+        <article>
+          <span>Total de cuotas</span>
+          <strong id="fichaCuotasTotal">$ 0,00</strong>
+        </article>
+        <article>
+          <span>Saldo total</span>
+          <strong id="fichaSaldoTotal">$ 0,00</strong>
+        </article>
+      </div>
+    </section>
+
     <section id="clientCard" class="client-card hidden">
       <div class="client-head"><div><span class="eyebrow">CLIENTE</span><h2 id="clientName">—</h2><p id="clientCuil">—</p></div><div class="organismo-pill" id="clientOrganismo">—</div></div>
       <div class="summary-grid"><article><span>Operaciones vigentes</span><strong id="vigentesCount">0</strong></article><article><span>Cuota mensual total</span><strong id="cuotaTotal">$ 0,00</strong></article><article><span>Saldo capital total</span><strong id="saldoTotal">$ 0,00</strong></article></div>
