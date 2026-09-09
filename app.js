@@ -1,11 +1,13 @@
 const $=s=>document.querySelector(s);
-const cuilInput=$("#cuilInput"),organismoSelect=$("#organismoSelect"),consultarBtn=$("#consultarBtn"),limpiarBtn=$("#limpiarBtn"),messageBox=$("#messageBox"),clientCard=$("#clientCard"),creditsList=$("#creditsList"),creditTemplate=$("#creditTemplate");
+const cuilInput=$("#cuilInput"),organismoSelect=$("#organismoSelect"),consultarBtn=$("#consultarBtn"),limpiarBtn=$("#limpiarBtn"),messageBox=$("#messageBox"),clientCard=$("#clientCard"),creditsList=$("#creditsList"),creditTemplate=$("#creditTemplate"),fichaConsolidada=$("#fichaConsolidada");
 const fmtMoney=new Intl.NumberFormat("es-AR",{style:"currency",currency:"ARS",minimumFractionDigits:2,maximumFractionDigits:2});
+let ultimoEstadoConsolidado=null;
+let cupoFicha={cuil:"",texto:"Pendiente",negative:false};
 
 function normalizeCuil(v){return String(v||"").replace(/\D/g,"").slice(0,11)}
 function formatCuil(v){const d=normalizeCuil(v);if(d.length<=2)return d;if(d.length<=10)return`${d.slice(0,2)}-${d.slice(2)}`;return`${d.slice(0,2)}-${d.slice(2,10)}-${d.slice(10)}`}
 function showMessage(t){messageBox.textContent=t;messageBox.classList.remove("hidden")}
-function clearUI(){messageBox.classList.add("hidden");clientCard.classList.add("hidden");creditsList.innerHTML=""}
+function clearUI(){messageBox.classList.add("hidden");clientCard.classList.add("hidden");fichaConsolidada?.classList.add("hidden");creditsList.innerHTML="";ultimoEstadoConsolidado=null}
 function setText(root,field,value){const el=root.querySelector(`[data-field="${field}"]`);if(el)el.textContent=value}
 
 function numeroAR(v){
@@ -62,6 +64,75 @@ function adaptarResultado(result,cuilConsultado,organismoConsultado){
   };
 }
 
+function capturarCupoParaFicha(){
+  const resultCard=$("#resultCard");
+  const cupoFinal=$("#cupoFinal");
+
+  if(!resultCard||!cupoFinal||!resultCard.classList.contains("show")){
+    cupoFicha={cuil:"",texto:"Pendiente",negative:false};
+    return;
+  }
+
+  const cuilActual=normalizeCuil(cuilInput.value);
+
+  /*
+    El cupo queda asociado al CUIL que está escrito en pantalla
+    en el momento de calcularlo. Así nunca mostramos en la ficha
+    de un cliente el cupo que quedó visible de un cliente anterior.
+  */
+  cupoFicha={
+    cuil:cuilActual.length===11?cuilActual:"",
+    texto:String(cupoFinal.textContent||"Pendiente").trim()||"Pendiente",
+    negative:resultCard.classList.contains("negative")
+  };
+}
+
+function leerCupoVisible(cuilFicha){
+  const cuil=normalizeCuil(cuilFicha);
+
+  if(cuil.length!==11||cupoFicha.cuil!==cuil){
+    return{texto:"Pendiente",negative:false};
+  }
+
+  return{
+    texto:cupoFicha.texto,
+    negative:cupoFicha.negative
+  };
+}
+
+function renderFichaConsolidada(){
+  if(!ultimoEstadoConsolidado||!fichaConsolidada)return;
+
+  const cupo=leerCupoVisible(ultimoEstadoConsolidado.cuil);
+
+  $("#fichaNombre").textContent=ultimoEstadoConsolidado.nombre||"CLIENTE";
+  $("#fichaCuil").textContent=formatCuil(ultimoEstadoConsolidado.cuil);
+  $("#fichaOrganismo").textContent=ultimoEstadoConsolidado.organismo||"—";
+  $("#fichaCupo").textContent=cupo.texto;
+  $("#fichaVigentes").textContent=ultimoEstadoConsolidado.vigentes;
+  $("#fichaCuotasTotal").textContent=fmtMoney.format(ultimoEstadoConsolidado.cuotaTotal);
+  $("#fichaSaldoTotal").textContent=fmtMoney.format(ultimoEstadoConsolidado.saldoTotal);
+
+  const fichaCupo=$(".ficha-cupo");
+  if(fichaCupo)fichaCupo.classList.toggle("negative",cupo.negative);
+
+  fichaConsolidada.classList.remove("hidden");
+}
+
+function observarCupo(){
+  const resultCard=$("#resultCard");
+  const cupoFinal=$("#cupoFinal");
+  if(!resultCard||!cupoFinal)return;
+
+  const observer=new MutationObserver(()=>{
+    capturarCupoParaFicha();
+    if(ultimoEstadoConsolidado)renderFichaConsolidada();
+  });
+
+  observer.observe(resultCard,{attributes:true,attributeFilter:["class"]});
+  observer.observe(cupoFinal,{childList:true,characterData:true,subtree:true});
+}
+
 function renderCredit(c){
   const node=creditTemplate.content.firstElementChild.cloneNode(true);
   setText(node,"operacion",c.operacion??"—");
@@ -93,10 +164,22 @@ function renderEstado(data){
   $("#clientOrganismo").textContent=data.organismo||"—";
 
   const credits=Array.isArray(data.creditos)?data.creditos:[];
+  const cuotaTotal=credits.reduce((a,c)=>a+Number(c.valorCuota||0),0);
+  const saldoTotal=credits.reduce((a,c)=>a+Number(c.saldoCapital||0),0);
 
   $("#vigentesCount").textContent=credits.length;
-  $("#cuotaTotal").textContent=fmtMoney.format(credits.reduce((a,c)=>a+Number(c.valorCuota||0),0));
-  $("#saldoTotal").textContent=fmtMoney.format(credits.reduce((a,c)=>a+Number(c.saldoCapital||0),0));
+  $("#cuotaTotal").textContent=fmtMoney.format(cuotaTotal);
+  $("#saldoTotal").textContent=fmtMoney.format(saldoTotal);
+
+  ultimoEstadoConsolidado={
+    nombre:data.nombre||"CLIENTE",
+    cuil:data.cuil||"",
+    organismo:data.organismo||"—",
+    vigentes:credits.length,
+    cuotaTotal,
+    saldoTotal
+  };
+  renderFichaConsolidada();
 
   creditsList.innerHTML="";
   credits.forEach(c=>creditsList.appendChild(renderCredit(c)));
@@ -142,3 +225,6 @@ limpiarBtn.addEventListener("click",()=>{
   clearUI();
   cuilInput.focus()
 });
+
+observarCupo();
+capturarCupoParaFicha();
