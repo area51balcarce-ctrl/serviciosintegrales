@@ -231,7 +231,7 @@ function casoHtml(caso,creador){
       </section>
 
       <section class="section">
-        <div class="section-title">OBSERVACIONES DE KEVIN / PAMELA</div>
+        <div class="section-title">OBSERVACIONES DE ${escapeHtml((creador || "USUARIO INTERNO").toUpperCase())}</div>
         <div class="observations">${obs}</div>
       </section>
 
