@@ -1,150 +1,170 @@
-<!doctype html>
-<html lang="es">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Acceso · Servicios Integrales</title>
-  <style>
-    :root{
-      --verde:#0f6a3d;
-      --verde-oscuro:#0a4f2e;
-      --verde-suave:#edf8f2;
-      --borde:#d8e9df;
-      --texto:#17231d;
-      --muted:#66736c;
-      --blanco:#fff;
-      --rojo:#b42318;
-    }
-    *{box-sizing:border-box}
-    body{
-      margin:0;
-      min-height:100vh;
-      font-family:Arial,Helvetica,sans-serif;
-      background:linear-gradient(180deg,#f4fbf7 0%,#ffffff 100%);
-      color:var(--texto);
-      display:grid;
-      place-items:center;
-      padding:24px;
-    }
-    .shell{width:min(100%,470px)}
-    .brand{
-      background:linear-gradient(135deg,var(--verde-oscuro),var(--verde));
-      color:#fff;
-      border-radius:20px 20px 0 0;
-      padding:26px 28px;
-    }
-    .badge{
-      display:inline-block;
-      font-size:12px;
-      font-weight:800;
-      letter-spacing:.06em;
-      background:rgba(255,255,255,.12);
-      border:1px solid rgba(255,255,255,.18);
-      border-radius:999px;
-      padding:7px 10px;
-      margin-bottom:14px;
-    }
-    .brand h1{margin:0 0 7px;font-size:31px;line-height:1.05}
-    .brand p{margin:0;opacity:.9;font-size:14px;line-height:1.45}
-    .card{
-      background:var(--blanco);
-      border:1px solid var(--borde);
-      border-top:0;
-      border-radius:0 0 20px 20px;
-      box-shadow:0 18px 45px rgba(20,80,50,.10);
-      padding:28px;
-    }
-    label{display:block;font-size:13px;font-weight:800;margin-bottom:8px}
-    input{
-      width:100%;
-      min-height:48px;
-      padding:0 14px;
-      border:1px solid #cbded2;
-      border-radius:12px;
-      font:inherit;
-      outline:none;
-    }
-    input:focus{border-color:#2b8b5b;box-shadow:0 0 0 3px rgba(43,139,91,.10)}
-    button,.button-link{
-      width:100%;
-      min-height:48px;
-      border:0;
-      border-radius:12px;
-      font:inherit;
-      font-weight:800;
-      cursor:pointer;
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      text-decoration:none;
-    }
-    .primary{margin-top:12px;background:var(--verde);color:#fff}
-    .secondary{margin-top:10px;background:var(--verde-suave);color:var(--verde-oscuro)}
-    button:disabled{opacity:.65;cursor:not-allowed}
-    .hint{margin:10px 0 0;color:var(--muted);font-size:12px;line-height:1.45}
-    .message{
-      margin-top:14px;
-      padding:12px 14px;
-      border-radius:12px;
-      font-size:13px;
-      line-height:1.45;
-      background:var(--verde-suave);
-      color:var(--verde-oscuro);
-    }
-    .message.error{background:#fff1f0;color:var(--rojo)}
-    .hidden{display:none!important}
-    .user-box{
-      border:1px solid var(--borde);
-      background:#fbfefc;
-      border-radius:14px;
-      padding:16px;
-    }
-    .user-name{font-size:20px;font-weight:900;margin-bottom:5px}
-    .user-role{
-      display:inline-block;
-      border-radius:999px;
-      padding:6px 9px;
-      background:var(--verde-suave);
-      color:var(--verde-oscuro);
-      font-size:12px;
-      font-weight:800;
-    }
-    .user-email{margin-top:9px;color:var(--muted);font-size:13px}
-    .footer{text-align:center;margin-top:14px;color:#7a877f;font-size:11px}
-  </style>
-</head>
-<body>
-  <main class="shell">
-    <section class="brand">
-      <span class="badge">SERVICIOS INTEGRALES · Uso interno</span>
-      <h1>Acceso al sistema</h1>
-      <p>Ingreso exclusivo para usuarios autorizados.</p>
-    </section>
+import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
 
-    <section class="card">
-      <div id="loginPanel">
-        <label for="emailInput">Correo electrónico</label>
-        <input id="emailInput" type="email" autocomplete="email" placeholder="tu correo autorizado" />
-        <button id="loginBtn" class="primary" type="button">Enviarme enlace de acceso</button>
-        <p class="hint">Te enviaremos un enlace seguro a tu correo. No necesitás compartir ninguna contraseña.</p>
-      </div>
+const SUPABASE_URL = "https://smxcqnahlklkqrxbbrjh.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_am_ucuk2jAJPZRz-aaVJvA_72Z1h2du";
 
-      <div id="sessionPanel" class="hidden">
-        <div class="user-box">
-          <div id="sessionName" class="user-name">Usuario</div>
-          <div id="sessionRole" class="user-role">ROL</div>
-          <div id="sessionEmail" class="user-email"></div>
-        </div>
-        <a class="button-link primary" href="/">Entrar a SERVICIOS INTEGRALES</a>
-        <button id="logoutBtn" class="secondary" type="button">Cerrar sesión</button>
-      </div>
+const USUARIOS_AUTORIZADOS = new Set([
+  "kevinebraim55@gmail.com",
+  "pamecajera@gmail.com",
+  "s.i.balcarce@gmail.com"
+]);
 
-      <div id="messageBox" class="message hidden"></div>
-    </section>
+const supabase = createClient(
+  SUPABASE_URL,
+  SUPABASE_PUBLISHABLE_KEY,
+  {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true
+    }
+  }
+);
 
-    <div class="footer">SERVICIOS INTEGRALES · Sistema interno</div>
-  </main>
+const $ = (s) => document.querySelector(s);
 
-  <script type="module" src="login.js"></script>
-</body>
-</html>
+const emailInput = $("#emailInput");
+const loginBtn = $("#loginBtn");
+const logoutBtn = $("#logoutBtn");
+const loginPanel = $("#loginPanel");
+const sessionPanel = $("#sessionPanel");
+const messageBox = $("#messageBox");
+
+function normalizarEmail(valor) {
+  return String(valor || "").trim().toLowerCase();
+}
+
+function mensaje(texto, error = false) {
+  messageBox.textContent = texto;
+  messageBox.classList.remove("hidden", "error");
+  if (error) messageBox.classList.add("error");
+}
+
+function limpiarMensaje() {
+  messageBox.classList.add("hidden");
+  messageBox.classList.remove("error");
+  messageBox.textContent = "";
+}
+
+function mostrarLogin() {
+  sessionPanel.classList.add("hidden");
+  loginPanel.classList.remove("hidden");
+}
+
+function mostrarSesion(perfil, email) {
+  $("#sessionName").textContent = perfil.nombre || "Usuario";
+  $("#sessionRole").textContent = perfil.rol || "USUARIO";
+  $("#sessionEmail").textContent = email || "";
+  loginPanel.classList.add("hidden");
+  sessionPanel.classList.remove("hidden");
+}
+
+async function obtenerPerfilInterno(user) {
+  if (!user?.id) return null;
+
+  const { data, error } = await supabase
+    .from("usuarios")
+    .select("id,nombre,email,rol,activo")
+    .eq("auth_user_id", user.id)
+    .eq("activo", true)
+    .maybeSingle();
+
+  if (error) {
+    console.error("[SERVICIOS INTEGRALES] Error perfil:", error);
+    return null;
+  }
+
+  return data || null;
+}
+
+async function revisarSesion() {
+  limpiarMensaje();
+
+  const { data, error } = await supabase.auth.getUser();
+  const user = data?.user || null;
+
+  if (error || !user) {
+    mostrarLogin();
+    return;
+  }
+
+  const perfil = await obtenerPerfilInterno(user);
+
+  if (!perfil) {
+    await supabase.auth.signOut();
+    mostrarLogin();
+    mensaje(
+      "Tu correo inició sesión, pero no está habilitado como usuario interno de SERVICIOS INTEGRALES.",
+      true
+    );
+    return;
+  }
+
+  mostrarSesion(perfil, user.email);
+  mensaje(`Acceso correcto. Bienvenido/a ${perfil.nombre}.`);
+}
+
+async function enviarEnlace() {
+  limpiarMensaje();
+
+  const email = normalizarEmail(emailInput.value);
+
+  if (!email || !email.includes("@")) {
+    mensaje("Ingresá un correo electrónico válido.", true);
+    return;
+  }
+
+  if (!USUARIOS_AUTORIZADOS.has(email)) {
+    mensaje("Ese correo no está autorizado para ingresar al sistema.", true);
+    return;
+  }
+
+  loginBtn.disabled = true;
+  loginBtn.textContent = "Enviando enlace...";
+
+  try {
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: {
+        shouldCreateUser: true,
+        emailRedirectTo: `${window.location.origin}/login.html`
+      }
+    });
+
+    if (error) throw error;
+
+    mensaje("Enlace enviado. Revisá tu correo y abrí el enlace desde esta misma PC.");
+  } catch (error) {
+    console.error("[SERVICIOS INTEGRALES] Error login:", error);
+    mensaje(
+      "No se pudo enviar el enlace de acceso. Revisá la configuración de Auth y volvé a intentar.",
+      true
+    );
+  } finally {
+    loginBtn.disabled = false;
+    loginBtn.textContent = "Enviarme enlace de acceso";
+  }
+}
+
+loginBtn.addEventListener("click", enviarEnlace);
+
+emailInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") enviarEnlace();
+});
+
+logoutBtn.addEventListener("click", async () => {
+  limpiarMensaje();
+  await supabase.auth.signOut();
+  mostrarLogin();
+  mensaje("Sesión cerrada.");
+});
+
+window.addEventListener("load", () => {
+  setTimeout(revisarSesion, 250);
+});
+
+supabase.auth.onAuthStateChange((_event, session) => {
+  if (session?.user) {
+    setTimeout(revisarSesion, 120);
+  }
+});
