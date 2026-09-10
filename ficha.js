@@ -181,6 +181,42 @@
     contenedor.classList.remove("hidden");
   }
 
+  function asegurarObservaciones() {
+    let bloque = $("#fichaObservacionesBloque");
+
+    if (bloque) return bloque;
+
+    bloque = document.createElement("div");
+    bloque.id = "fichaObservacionesBloque";
+    bloque.className = "ficha-observaciones";
+
+    const titulo = document.createElement("label");
+    titulo.className = "ficha-observaciones-titulo";
+    titulo.setAttribute("for", "fichaObservaciones");
+    titulo.textContent = "Observaciones internas";
+
+    const ayuda = document.createElement("div");
+    ayuda.className = "ficha-observaciones-ayuda";
+    ayuda.textContent =
+      "Anotá cualquier dato útil para el seguimiento interno del cliente.";
+
+    const textarea = document.createElement("textarea");
+    textarea.id = "fichaObservaciones";
+    textarea.className = "ficha-observaciones-textarea";
+    textarea.rows = 4;
+    textarea.placeholder =
+      "Ej.: Renovación, bajar cuota, volver a llamar, consultar con Juan...";
+
+    bloque.appendChild(titulo);
+    bloque.appendChild(ayuda);
+    bloque.appendChild(textarea);
+
+    const detalle = asegurarDetalleCreditos();
+    detalle.insertAdjacentElement("afterend", bloque);
+
+    return bloque;
+  }
+
   function actualizarFicha() {
     /*
       Si Estado de Cuenta todavía no terminó, la ficha permanece oculta.
@@ -231,6 +267,7 @@
       No recalcula ni modifica ningún dato.
     */
     renderDetalleCreditos();
+    asegurarObservaciones();
 
     ficha.classList.remove("hidden");
   }
@@ -296,6 +333,41 @@
       .ficha-credito-linea strong{
         font-weight:800;
       }
+      .ficha-observaciones{
+        margin-top:18px;
+        padding-top:16px;
+        border-top:1px solid rgba(16,92,53,.14);
+      }
+      .ficha-observaciones-titulo{
+        display:block;
+        margin-bottom:4px;
+        font-size:14px;
+        font-weight:800;
+        color:#0d633b;
+      }
+      .ficha-observaciones-ayuda{
+        margin-bottom:8px;
+        font-size:12px;
+        color:#617069;
+      }
+      .ficha-observaciones-textarea{
+        width:100%;
+        min-height:92px;
+        resize:vertical;
+        box-sizing:border-box;
+        padding:12px 14px;
+        border:1px solid rgba(16,92,53,.20);
+        border-radius:12px;
+        background:#fff;
+        color:#17231d;
+        font:inherit;
+        line-height:1.45;
+        outline:none;
+      }
+      .ficha-observaciones-textarea:focus{
+        border-color:#1d8b55;
+        box-shadow:0 0 0 3px rgba(29,139,85,.10);
+      }
       @media (max-width:760px){
         .ficha-credito-linea{
           font-size:14px;
@@ -308,6 +380,6 @@
   actualizarFicha();
 
   console.info(
-    "[SERVICIOS INTEGRALES] Ficha interna consolidada V1.1 activa."
+    "[SERVICIOS INTEGRALES] Ficha interna consolidada V1.2 activa."
   );
 })();
