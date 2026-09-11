@@ -8,9 +8,9 @@ const supabase = createClient(
   SUPABASE_PUBLISHABLE_KEY,
   {
     auth:{
-      persistSession:true,
-      autoRefreshToken:true,
-      detectSessionInUrl:true
+      persistSession:false,
+      autoRefreshToken:false,
+      detectSessionInUrl:false
     }
   }
 );
@@ -76,64 +76,38 @@ function escapeHtml(valor){
 }
 
 async function validarAdmin(){
-  const {data:userData,error:userError} = await supabase.auth.getUser();
-  user = userData?.user || null;
+  const STORAGE_KEY = "si_usuario_local_v1";
+  const PERFILES = {"KEVIN": {"id": "c6ffdf55-3fbf-4a97-b3e5-aa8108505b41", "nombre": "Kevin", "email": "kevinebraim55@gmail.com", "rol": "ASESOR"}, "PAMELA": {"id": "8ce7d4d1-2650-4022-8827-913407184b93", "nombre": "Pamela", "email": "pamecajera@gmail.com", "rol": "ASESOR"}, "JUAN": {"id": "d00c9b56-466a-41f3-9263-30390109cf1a", "nombre": "Juan", "email": "s.i.balcarce@gmail.com", "rol": "ADMINISTRADOR"}};
 
-  if(userError || !user){
-    location.replace("/login.html");
+  const clave = String(localStorage.getItem(STORAGE_KEY) || "")
+    .trim()
+    .toUpperCase();
+
+  const elegido = PERFILES[clave] || null;
+
+  if(!elegido){
+    location.replace("/login.html?cambiar=1");
     return false;
   }
 
-  const {data,error} = await supabase
-    .from("usuarios")
-    .select("id,nombre,email,rol,activo")
-    .eq("auth_user_id",user.id)
-    .eq("activo",true)
-    .maybeSingle();
-
-  if(error || !data){
-    await supabase.auth.signOut();
-    location.replace("/login.html");
-    return false;
-  }
-
-  perfil = data;
+  perfil = elegido;
+  user = {id:perfil.id,email:perfil.email};
 
   if(perfil.rol !== "ADMINISTRADOR"){
     mostrarPagina();
     document.body.innerHTML = `
       <main style="
-        min-height:100vh;
-        display:grid;
-        place-items:center;
-        padding:24px;
-        font-family:Arial,Helvetica,sans-serif;
-        background:#f3faf6;
-        color:#17231d;
-      ">
+        min-height:100vh;display:grid;place-items:center;padding:24px;
+        font-family:Arial,Helvetica,sans-serif;background:#f3faf6;color:#17231d;">
         <section style="
-          width:min(100%,520px);
-          background:#fff;
-          border:1px solid #d7e9df;
-          border-radius:18px;
-          padding:26px;
-          box-shadow:0 18px 45px rgba(20,80,50,.10);
-        ">
+          width:min(100%,520px);background:#fff;border:1px solid #d7e9df;
+          border-radius:18px;padding:26px;box-shadow:0 18px 45px rgba(20,80,50,.10);">
           <h1 style="margin:0 0 10px;">Acceso restringido</h1>
-          <p style="line-height:1.5;">
-            Esta pantalla es exclusiva para el administrador de SERVICIOS INTEGRALES.
-          </p>
-          <a href="/" style="
-            display:flex;
-            min-height:44px;
-            align-items:center;
-            justify-content:center;
-            border-radius:10px;
-            background:#0f6a3d;
-            color:#fff;
-            text-decoration:none;
-            font-weight:800;
-          ">Volver al sistema</a>
+          <p style="line-height:1.5;">Esta pantalla corresponde al perfil Administrador.</p>
+          <a href="/login.html?cambiar=1" style="
+            display:flex;min-height:44px;align-items:center;justify-content:center;
+            border-radius:10px;background:#0f6a3d;color:#fff;text-decoration:none;
+            font-weight:800;">Cambiar usuario</a>
         </section>
       </main>
     `;
@@ -146,7 +120,6 @@ async function validarAdmin(){
   mostrarPagina();
   return true;
 }
-
 async function traerUsuarios(ids){
   const limpios = [...new Set(ids.filter(Boolean))];
   if(!limpios.length) return new Map();
@@ -390,9 +363,9 @@ casesList.addEventListener("click",(event)=>{
 
 refreshBtn.addEventListener("click",()=>cargarCasos(false));
 
-logoutBtn.addEventListener("click",async()=>{
-  await supabase.auth.signOut();
-  location.replace("/login.html");
+logoutBtn.addEventListener("click",()=>{
+  localStorage.removeItem("si_usuario_local_v1");
+  location.replace("/login.html?cambiar=1");
 });
 
 async function iniciar(){
