@@ -1,18 +1,15 @@
 /*
-  SERVICIOS INTEGRALES - AUTH GUARD V1
+  SERVICIOS INTEGRALES - MODO INTERNO SIN EMAIL V1
 
-  OBJETIVO:
-  - proteger la página principal;
-  - si NO hay una sesión válida, redirigir a /login.html;
-  - si hay sesión, verificar que el usuario exista y esté activo en public.usuarios;
-  - mostrar arriba a la derecha Nombre · Rol · Cerrar sesión.
+  Cada PC recuerda el usuario elegido.
+  No usa Magic Link ni envía correos.
 
   IMPORTANTE:
-  - NO modifica app.js.
-  - NO modifica ficha.js.
-  - NO modifica cupo.js.
-  - NO modifica connector.js.
-  - NO contiene ninguna clave secreta/service_role.
+  - NO modifica app.js
+  - NO modifica ficha.js
+  - NO modifica gestion.js
+  - NO modifica cupo.js
+  - NO modifica connector.js
 */
 
 (() => {
@@ -21,70 +18,26 @@
   const SUPABASE_URL = "https://smxcqnahlklkqrxbbrjh.supabase.co";
   const SUPABASE_PUBLISHABLE_KEY =
     "sb_publishable_am_ucuk2jAJPZRz-aaVJvA_72Z1h2du";
+  const STORAGE_KEY = "si_usuario_local_v1";
+  const PERFILES = {"KEVIN": {"id": "c6ffdf55-3fbf-4a97-b3e5-aa8108505b41", "nombre": "Kevin", "email": "kevinebraim55@gmail.com", "rol": "ASESOR"}, "PAMELA": {"id": "8ce7d4d1-2650-4022-8827-913407184b93", "nombre": "Pamela", "email": "pamecajera@gmail.com", "rol": "ASESOR"}, "JUAN": {"id": "d00c9b56-466a-41f3-9263-30390109cf1a", "nombre": "Juan", "email": "s.i.balcarce@gmail.com", "rol": "ADMINISTRADOR"}};
 
-  /*
-    Ocultamos la página antes de que se pinte.
-    Solo se muestra después de validar sesión + usuario interno.
-  */
   document.documentElement.style.visibility = "hidden";
 
-  const LOGIN_URL = "/login.html";
-
-  function irAlLogin() {
-    if (location.pathname.toLowerCase().endsWith("/login.html")) return;
-    location.replace(LOGIN_URL);
+  function leerClaveUsuario() {
+    return String(localStorage.getItem(STORAGE_KEY) || "")
+      .trim()
+      .toUpperCase();
   }
 
   function mostrarPagina() {
     document.documentElement.style.visibility = "visible";
   }
 
-  function mostrarErrorAcceso(texto) {
-    document.documentElement.style.visibility = "visible";
-
-    document.addEventListener(
-      "DOMContentLoaded",
-      () => {
-        document.body.innerHTML = `
-          <main style="
-            min-height:100vh;
-            display:grid;
-            place-items:center;
-            padding:24px;
-            font-family:Arial,Helvetica,sans-serif;
-            background:#f4fbf7;
-            color:#17231d;
-          ">
-            <section style="
-              width:min(100%,520px);
-              background:white;
-              border:1px solid #d8e9df;
-              border-radius:18px;
-              padding:26px;
-              box-shadow:0 18px 45px rgba(20,80,50,.10);
-            ">
-              <h1 style="margin:0 0 10px;font-size:24px;">SERVICIOS INTEGRALES</h1>
-              <p style="margin:0 0 18px;line-height:1.5;">${texto}</p>
-              <a href="${LOGIN_URL}" style="
-                display:flex;
-                min-height:46px;
-                align-items:center;
-                justify-content:center;
-                text-decoration:none;
-                background:#0f6a3d;
-                color:white;
-                border-radius:11px;
-                font-weight:800;
-              ">Ir al acceso</a>
-            </section>
-          </main>
-        `;
-      },
-      { once: true }
-    );
+  function irAlSelector() {
+    location.replace("/login.html?cambiar=1");
   }
 
-  function inyectarUsuario(supabase, perfil, email) {
+  function montarUsuario(perfil) {
     const montar = () => {
       if (document.getElementById("si-user-session")) return;
 
@@ -94,7 +47,7 @@
         <span class="si-user-name"></span>
         <span class="si-user-sep">·</span>
         <span class="si-user-role"></span>
-        <button type="button" class="si-user-logout">Cerrar sesión</button>
+        <button type="button" class="si-user-switch">Cambiar usuario</button>
       `;
 
       const style = document.createElement("style");
@@ -117,17 +70,10 @@
           font-family:Arial,Helvetica,sans-serif;
           font-size:12px;
         }
-        #si-user-session .si-user-name{
-          font-weight:800;
-        }
-        #si-user-session .si-user-role{
-          font-weight:800;
-          color:#0f6a3d;
-        }
-        #si-user-session .si-user-sep{
-          color:#8a9890;
-        }
-        #si-user-session .si-user-logout{
+        #si-user-session .si-user-name{font-weight:800}
+        #si-user-session .si-user-role{font-weight:800;color:#0f6a3d}
+        #si-user-session .si-user-sep{color:#8a9890}
+        #si-user-session .si-user-switch{
           border:0;
           background:#edf8f2;
           color:#0a4f2e;
@@ -136,9 +82,6 @@
           font:inherit;
           font-weight:800;
           cursor:pointer;
-        }
-        #si-user-session .si-user-logout:hover{
-          background:#dff2e8;
         }
         @media (max-width:760px){
           #si-user-session{
@@ -153,31 +96,31 @@
       document.head.appendChild(style);
       document.body.appendChild(box);
 
-      box.querySelector(".si-user-name").textContent =
-        perfil?.nombre || "Usuario";
+      box.querySelector(".si-user-name").textContent = perfil.nombre;
+      box.querySelector(".si-user-role").textContent = perfil.rol;
+      box.title = perfil.email;
 
-      box.querySelector(".si-user-role").textContent =
-        perfil?.rol || "USUARIO";
-
-      box.title = email || "";
-
-      box.querySelector(".si-user-logout").addEventListener("click", async () => {
-        try {
-          await supabase.auth.signOut();
-        } finally {
-          location.replace(LOGIN_URL);
-        }
+      box.querySelector(".si-user-switch").addEventListener("click", () => {
+        location.href = "/login.html?cambiar=1";
       });
     };
 
     if (document.readyState === "loading") {
-      document.addEventListener("DOMContentLoaded", montar, { once: true });
+      document.addEventListener("DOMContentLoaded", montar, { once:true });
     } else {
       montar();
     }
   }
 
-  async function validarAcceso() {
+  async function iniciar() {
+    const clave = leerClaveUsuario();
+    const perfil = PERFILES[clave] || null;
+
+    if (!perfil) {
+      irAlSelector();
+      return;
+    }
+
     try {
       const { createClient } = await import(
         "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm"
@@ -187,84 +130,29 @@
         SUPABASE_URL,
         SUPABASE_PUBLISHABLE_KEY,
         {
-          auth: {
-            persistSession: true,
-            autoRefreshToken: true,
-            detectSessionInUrl: true
+          auth:{
+            persistSession:false,
+            autoRefreshToken:false,
+            detectSessionInUrl:false
           }
         }
       );
 
-      /*
-        getUser valida el usuario contra Supabase Auth.
-      */
-      const { data: userData, error: userError } =
-        await supabase.auth.getUser();
-
-      const user = userData?.user || null;
-
-      if (userError || !user) {
-        irAlLogin();
-        return;
-      }
-
-      /*
-        RLS + auth_user_id determinan si realmente pertenece
-        al equipo interno de SERVICIOS INTEGRALES.
-      */
-      const { data: perfil, error: perfilError } = await supabase
-        .from("usuarios")
-        .select("id,nombre,email,rol,activo")
-        .eq("auth_user_id", user.id)
-        .eq("activo", true)
-        .maybeSingle();
-
-      if (perfilError || !perfil) {
-        try {
-          await supabase.auth.signOut();
-        } catch (_) {}
-
-        mostrarErrorAcceso(
-          "Tu sesión existe, pero este usuario no está habilitado para ingresar al sistema."
-        );
-        return;
-      }
-
       window.ServiciosIntegralesAuth = {
         supabase,
-        user,
-        perfil
+        perfil,
+        user:{ id:perfil.id, email:perfil.email },
+        modo:"INTERNO_SIN_EMAIL"
       };
 
-      inyectarUsuario(supabase, perfil, user.email);
+      montarUsuario(perfil);
       mostrarPagina();
-
-      console.info(
-        `[SERVICIOS INTEGRALES] Acceso autorizado: ${perfil.nombre} · ${perfil.rol}.`
-      );
     } catch (error) {
-      console.error(
-        "[SERVICIOS INTEGRALES] Error validando acceso:",
-        error
-      );
-
-      mostrarErrorAcceso(
-        "No se pudo validar el acceso en este momento. Volvé a intentar desde la pantalla de ingreso."
-      );
+      console.error("[SERVICIOS INTEGRALES] Error iniciando modo interno:", error);
+      mostrarPagina();
+      alert("No se pudo iniciar SERVICIOS INTEGRALES. Volvé a intentar.");
     }
   }
 
-  /*
-    Protección extra: si por algún problema de red la validación
-    queda colgada demasiado tiempo, no mostramos la aplicación.
-  */
-  const timeout = setTimeout(() => {
-    if (document.documentElement.style.visibility === "hidden") {
-      mostrarErrorAcceso(
-        "La validación de acceso está tardando demasiado. Volvé a ingresar al sistema."
-      );
-    }
-  }, 12000);
-
-  validarAcceso().finally(() => clearTimeout(timeout));
+  iniciar();
 })();
