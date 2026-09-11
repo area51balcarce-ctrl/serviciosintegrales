@@ -1,8 +1,8 @@
 /*
-  SERVICIOS INTEGRALES - CASOS RESUELTOS DE JUAN V1
+  SERVICIOS INTEGRALES - CASOS RESUELTOS DE JUAN V1.1
 
   Agrega debajo del panel actual una sección para consultar casos
-  APROBADOS y RECHAZADOS.
+  APROBADOS y RECHAZADOS, con buscador por nombre o CUIL.
 
   IMPORTANTE:
   - NO modifica juan.js.
@@ -51,6 +51,7 @@ const fmtMoney = new Intl.NumberFormat("es-AR",{
 
 let casosCache = [];
 let filtroEstado = "TODOS";
+let busquedaActual = "";
 let refreshTimer = null;
 let cargando = false;
 
@@ -139,6 +140,24 @@ function asegurarEstilos(){
       background:var(--verde-suave);
       color:var(--verde-oscuro);
       border-color:#bcdcca;
+    }
+
+    .si-resueltos-search{
+      min-width:250px;
+      min-height:36px;
+      border:1px solid var(--verde-borde);
+      border-radius:9px;
+      padding:0 11px;
+      background:#fff;
+      color:var(--texto);
+      font:inherit;
+      font-size:12px;
+      outline:none;
+    }
+
+    .si-resueltos-search:focus{
+      border-color:#95c9aa;
+      box-shadow:0 0 0 3px rgba(15,106,61,.08);
     }
 
     .si-resueltos-count{
@@ -327,6 +346,13 @@ function asegurarEstilos(){
     }
 
     @media (max-width:760px){
+      .si-resueltos-search{
+        width:100%;
+        min-width:0;
+      }
+      .si-resueltos-actions{
+        width:100%;
+      }
       .si-resuelto-head{
         flex-direction:column;
       }
@@ -363,6 +389,15 @@ function asegurarBloque(){
       </div>
 
       <div class="si-resueltos-actions">
+        <input
+          id="siResueltosSearch"
+          class="si-resueltos-search"
+          type="search"
+          autocomplete="off"
+          placeholder="Buscar por nombre o CUIL"
+          aria-label="Buscar casos resueltos por nombre o CUIL"
+        >
+
         <button type="button" class="si-resueltos-filter active" data-filter="TODOS">
           Todos
         </button>
@@ -496,23 +531,53 @@ function casoHtml(caso,usuarios){
   `;
 }
 
+function normalizarBusqueda(valor){
+  return String(valor || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g,"")
+    .toLowerCase()
+    .trim();
+}
+
+function coincideBusqueda(caso){
+  if(!busquedaActual) return true;
+
+  const nombre = normalizarBusqueda(caso?.nombre_apellido);
+  const cuil = String(caso?.cuil || "").replace(/\D/g,"");
+  const termino = normalizarBusqueda(busquedaActual);
+  const terminoDigitos = String(busquedaActual || "").replace(/\D/g,"");
+
+  if(nombre.includes(termino)) return true;
+  if(terminoDigitos && cuil.includes(terminoDigitos)) return true;
+
+  return false;
+}
+
 function aplicarFiltro(){
   const list = $("#siResueltosList");
   const count = $("#siResueltosCount");
   if(!list || !count) return;
 
-  const filtrados =
-    filtroEstado === "TODOS"
-      ? casosCache
-      : casosCache.filter(c => c.estado === filtroEstado);
+  const filtrados = casosCache.filter(caso => {
+    const coincideEstado =
+      filtroEstado === "TODOS" || caso.estado === filtroEstado;
+
+    return coincideEstado && coincideBusqueda(caso);
+  });
 
   count.textContent = String(filtrados.length);
 
   if(!filtrados.length){
+    const textoBusqueda = String(busquedaActual || "").trim();
+
     list.innerHTML = `
       <div class="si-resueltos-empty">
-        No hay casos ${filtroEstado === "APROBADO" ? "aprobados" :
-          filtroEstado === "RECHAZADO" ? "rechazados" : "resueltos"} para mostrar.
+        ${
+          textoBusqueda
+            ? `No se encontraron casos para "${escapeHtml(textoBusqueda)}".`
+            : `No hay casos ${filtroEstado === "APROBADO" ? "aprobados" :
+              filtroEstado === "RECHAZADO" ? "rechazados" : "resueltos"} para mostrar.`
+        }
       </div>
     `;
     return;
@@ -600,6 +665,16 @@ function montarFiltros(){
   });
 }
 
+function montarBuscador(){
+  const input = $("#siResueltosSearch");
+  if(!input) return;
+
+  input.addEventListener("input",()=>{
+    busquedaActual = input.value || "";
+    aplicarFiltro();
+  });
+}
+
 function observarResoluciones(){
   const messageBox = $("#messageBox");
   if(!messageBox) return;
@@ -634,6 +709,7 @@ async function iniciar(){
   asegurarEstilos();
   asegurarBloque();
   montarFiltros();
+  montarBuscador();
   observarResoluciones();
   vincularActualizar();
 
@@ -648,6 +724,6 @@ async function iniciar(){
   });
 
   console.info(
-    "[SERVICIOS INTEGRALES] Casos resueltos de Juan V1 activo."
+    "[SERVICIOS INTEGRALES] Casos resueltos de Juan V1.1 activo."
   );
 }
