@@ -1,6 +1,6 @@
 /*
-  SERVICIOS INTEGRALES - GESTIÓN V1
-  Envío de fichas a revisión de Juan.
+  SERVICIOS INTEGRALES - GESTIÓN V2
+  Envío de fichas a revisión de Juan + devolución automática de su decisión.
 
   IMPORTANTE:
   - NO modifica app.js.
@@ -156,6 +156,30 @@
         font-size:12px;
         line-height:1.45;
       }
+      .si-gestion-status.aprobado{
+        background:#edf8f2;
+        border-color:#a9d9bd;
+      }
+      .si-gestion-status.aprobado strong{
+        color:#0d633b;
+      }
+      .si-gestion-status.aprobado span{
+        color:#315c45;
+      }
+      .si-gestion-status.rechazado{
+        background:#fff1f0;
+        border-color:#efb0aa;
+      }
+      .si-gestion-status.rechazado strong{
+        color:#b42318;
+      }
+      .si-gestion-status.rechazado span{
+        color:#7a312b;
+      }
+      .si-gestion-respuesta{
+        margin-top:5px;
+        font-weight:800;
+      }
       .si-gestion-message{
         margin-top:10px;
         border-radius:10px;
@@ -207,6 +231,7 @@
         <strong></strong>
         <span class="si-gestion-quien"></span>
         <span class="si-gestion-fecha"></span>
+        <span class="si-gestion-respuesta"></span>
       </div>
       <div id="siGestionMensaje" class="si-gestion-message hidden" aria-live="polite"></div>
     `;
@@ -274,11 +299,16 @@
     const estado = $("#siGestionEstado");
     if (!estado) return;
 
+    estado.classList.remove("aprobado", "rechazado");
+
     $("strong", estado).textContent = "🟡 EN REVISIÓN";
     $(".si-gestion-quien", estado).textContent =
       `Enviado por ${nombreCreador || "usuario interno"}`;
     $(".si-gestion-fecha", estado).textContent =
       fechaHora(caso?.enviado_revision_at);
+
+    const respuesta = $(".si-gestion-respuesta", estado);
+    if (respuesta) respuesta.textContent = "";
 
     estado.classList.remove("hidden");
 
@@ -289,11 +319,51 @@
     }
   }
 
+  function mostrarResuelto(caso, nombreResolutor) {
+    const estado = $("#siGestionEstado");
+    if (!estado) return;
+
+    const aprobado = caso?.estado === "APROBADO";
+
+    estado.classList.remove("aprobado", "rechazado");
+    estado.classList.add(aprobado ? "aprobado" : "rechazado");
+
+    $("strong", estado).textContent =
+      aprobado ? "🟢 APROBADO POR JUAN" : "🔴 RECHAZADO POR JUAN";
+
+    $(".si-gestion-quien", estado).textContent =
+      `Resuelto por ${nombreResolutor || "Juan"}`;
+
+    $(".si-gestion-fecha", estado).textContent =
+      `Fecha: ${fechaHora(caso?.resuelto_at)}`;
+
+    const respuestaTexto = String(caso?.respuesta_resolucion || "").trim();
+    const respuesta = $(".si-gestion-respuesta", estado);
+    if (respuesta) {
+      respuesta.textContent = respuestaTexto
+        ? `Respuesta: ${respuestaTexto}`
+        : "Respuesta: sin observaciones.";
+    }
+
+    estado.classList.remove("hidden");
+
+    const btn = $("#siEnviarRevisionBtn");
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "🟡 ENVIAR NUEVAMENTE A REVISIÓN DE JUAN";
+    }
+  }
+
   function limpiarEstadoGestion() {
     casoPendienteActual = null;
 
     const estado = $("#siGestionEstado");
-    estado?.classList.add("hidden");
+    if (estado) {
+      estado.classList.add("hidden");
+      estado.classList.remove("aprobado", "rechazado");
+      const respuesta = $(".si-gestion-respuesta", estado);
+      if (respuesta) respuesta.textContent = "";
+    }
 
     const btn = $("#siEnviarRevisionBtn");
     if (btn) {
@@ -424,6 +494,22 @@
     return data || null;
   }
 
+  async function buscarUltimoCaso(cuil, organismo) {
+    const { data, error } = await auth.supabase
+      .from("casos")
+      .select(
+        "id,cuil,organismo,estado,creado_por,resuelto_por,enviado_revision_at,resuelto_at,respuesta_resolucion,created_at"
+      )
+      .eq("cuil", cuil)
+      .eq("organismo", organismo)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) throw error;
+    return data || null;
+  }
+
   async function refrescarEstado() {
     if (!auth) return;
     if (clientCard.classList.contains("hidden")) return;
@@ -442,7 +528,7 @@
     consultaActual = key;
 
     try {
-      const pendiente = await buscarPendiente(cuil, organismo);
+      const caso = await buscarUltimoCaso(cuil, organismo);
 
       /*
         Si mientras consultábamos cambió el cliente, ignoramos
@@ -450,11 +536,20 @@
       */
       if (consultaActual !== key) return;
 
-      if (!pendiente) return;
+      if (!caso) return;
 
-      casoPendienteActual = pendiente;
-      const creador = await nombreUsuario(pendiente.creado_por);
-      mostrarPendiente(pendiente, creador);
+      if (caso.estado === "EN_REVISION") {
+        casoPendienteActual = caso;
+        const creador = await nombreUsuario(caso.creado_por);
+        mostrarPendiente(caso, creador);
+        return;
+      }
+
+      if (caso.estado === "APROBADO" || caso.estado === "RECHAZADO") {
+        casoPendienteActual = null;
+        const resolutor = await nombreUsuario(caso.resuelto_por);
+        mostrarResuelto(caso, resolutor);
+      }
     } catch (error) {
       console.error(
         "[SERVICIOS INTEGRALES] No se pudo consultar el estado de gestión:",
@@ -584,8 +679,19 @@
       programarRefresco();
     }
 
+    /*
+      Mientras haya una ficha visible, consultamos el estado compartido
+      cada 5 segundos. Así la respuesta de Juan aparece sola, sin recargar
+      la página ni volver a consultar Creditan.
+    */
+    setInterval(() => {
+      if (!clientCard.classList.contains("hidden")) {
+        programarRefresco();
+      }
+    }, 5000);
+
     console.info(
-      `[SERVICIOS INTEGRALES] Gestión V1 activa para ${auth.perfil.nombre} · ${auth.perfil.rol}.`
+      `[SERVICIOS INTEGRALES] Gestión V2 activa para ${auth.perfil.nombre} · ${auth.perfil.rol}.`
     );
   }
 
