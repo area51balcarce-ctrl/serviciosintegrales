@@ -1,5 +1,5 @@
 /*
-  SERVICIOS INTEGRALES - ASISTENTE DE RENOVACIÓN / SIMULADOR V1.1
+  SERVICIOS INTEGRALES - ASISTENTE DE RENOVACIÓN / SIMULADOR V2
 
   PRIMERA ETAPA:
   - Agrega un checkbox a cada crédito vigente de la ficha consolidada.
@@ -47,6 +47,11 @@
 
   let cuilActual = "";
   let cuotaCreditan = null;
+  let planCreditan = null;
+  let simulacionError = "";
+  let simulandoCreditan = false;
+  let timerSimulacion = null;
+  let secuenciaSimulacion = 0;
   let timerSync = null;
   let bloqueCreado = false;
 
@@ -243,20 +248,44 @@
     ) || 0;
 
     /*
-      Creditan:
-      Si firma $2.240.000 y la comisión es $240.000,
-      el neto base es $2.000.000.
+      V2:
+      Cuando Creditan devuelve la fila exacta, usamos SU "En mano"
+      como neto base real y obtenemos la comisión por diferencia.
 
-      Por eso NO hacemos 2.240.000 x 12%.
-      Hacemos la inversa exacta del 12% sobre neto:
-        neto = firmado / 1.12
-        comisión = firmado - neto
+      Mientras esperamos la respuesta, conservamos la relación ya
+      comprobada (12% sobre neto) únicamente como cálculo provisional.
     */
-    const netoBase = importeFirmar > 0
+    const planCoincide = Boolean(
+      planCreditan?.ok &&
+      Math.abs(Number(planCreditan.capital || 0) - importeFirmar) < 0.02 &&
+      Number(planCreditan.cuotas || 0) === cuotas
+    );
+
+    const netoEstimado = importeFirmar > 0
       ? importeFirmar / 1.12
       : 0;
 
-    const comision = Math.max(0, importeFirmar - netoBase);
+    const netoBase = planCoincide
+      ? Number(
+          planCreditan.enMano ||
+          planCreditan.neto ||
+          netoEstimado
+        )
+      : netoEstimado;
+
+    const comision = Math.max(
+      0,
+      importeFirmar - netoBase
+    );
+
+    const cuotaReal = planCoincide
+      ? Number(planCreditan.cuota || 0)
+      : (
+          Number.isFinite(cuotaCreditan) &&
+          cuotaCreditan !== null
+            ? cuotaCreditan
+            : null
+        );
 
     const enManoFinal = importeFirmar > 0
       ? netoBase - totalCancelacion
@@ -272,10 +301,10 @@
 
     if (
       cupo.disponible &&
-      Number.isFinite(cuotaCreditan) &&
-      cuotaCreditan !== null
+      Number.isFinite(cuotaReal) &&
+      cuotaReal !== null
     ) {
-      margen = cupoProyectado - cuotaCreditan;
+      margen = cupoProyectado - cuotaReal;
       estadoCupo = margen >= 0 ? "ENTRA" : "NO_ENTRA";
     }
 
@@ -292,7 +321,10 @@
       enManoFinal,
       cupo,
       cupoProyectado,
-      cuotaCreditan,
+      cuotaCreditan: cuotaReal,
+      planCreditan: planCoincide ? planCreditan : null,
+      simulandoCreditan,
+      simulacionError,
       margen,
       estadoCupo
     };
@@ -324,12 +356,26 @@
 
     if (estado.cuotaCreditan === null) {
       box.classList.add("si-renovacion-cupo-pendiente");
+
+      if (estado.simulandoCreditan) {
+        box.innerHTML = `
+          <strong>🟡 CONSULTANDO CREDITAN</strong>
+          <span>Buscando la cuota real en la grilla de ofertas...</span>
+        `;
+        return;
+      }
+
+      if (estado.simulacionError) {
+        box.innerHTML = `
+          <strong>⚠️ NO SE PUDO LEER LA CUOTA</strong>
+          <span>${estado.simulacionError}</span>
+        `;
+        return;
+      }
+
       box.innerHTML = `
         <strong>⚪ PENDIENTE DE CUOTA CREDITAN</strong>
-        <span>
-          El cupo proyectado ya está listo. En la próxima etapa traeremos
-          automáticamente la cuota real desde Creditan.
-        </span>
+        <span>Ingresá importe a firmar y cuotas.</span>
       `;
       return;
     }
@@ -398,7 +444,11 @@
     escribir(
       "siRenovacionCuotaCreditan",
       estado.cuotaCreditan === null
-        ? "Pendiente Creditan"
+        ? (
+            estado.simulandoCreditan
+              ? "Consultando Creditan..."
+              : "Pendiente Creditan"
+          )
         : dinero(estado.cuotaCreditan)
     );
 
@@ -424,7 +474,11 @@
     escribir(
       "siRenovacionNuevaCuota",
       estado.cuotaCreditan === null
-        ? "Pendiente Creditan"
+        ? (
+            estado.simulandoCreditan
+              ? "Consultando Creditan..."
+              : "Pendiente Creditan"
+          )
         : dinero(estado.cuotaCreditan)
     );
 
@@ -505,6 +559,182 @@
     }
 
     renderCalculos();
+  }
+
+  function crearRequestIdSimulacion() {
+    if (
+      window.crypto &&
+      typeof window.crypto.randomUUID === "function"
+    ) {
+      return window.crypto.randomUUID();
+    }
+
+    return `sim-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  }
+
+  function consultarPlanCreditan(capital, cuotas, timeout = 22000) {
+    return new Promise((resolve) => {
+      const requestId = crearRequestIdSimulacion();
+      let terminado = false;
+
+      const finalizar = (resultado) => {
+        if (terminado) return;
+        terminado = true;
+        clearTimeout(timer);
+        window.removeEventListener("message", onMessage);
+        resolve(resultado);
+      };
+
+      const onMessage = (event) => {
+        if (event.source !== window) return;
+
+        const data = event.data;
+        if (
+          !data ||
+          data.source !==
+            "SERVICIOS_INTEGRALES_SIMULADOR_BRIDGE"
+        ) {
+          return;
+        }
+
+        if (
+          data.type !== "RESPUESTA_SIMULACION_CREDITAN" ||
+          data.requestId !== requestId
+        ) {
+          return;
+        }
+
+        finalizar(
+          data.resultado || {
+            ok: false,
+            code: "RESPUESTA_SIMULACION_INVALIDA"
+          }
+        );
+      };
+
+      window.addEventListener("message", onMessage);
+
+      const timer = setTimeout(() => {
+        finalizar({
+          ok: false,
+          code: "SIMULADOR_BRIDGE_NO_DISPONIBLE",
+          message:
+            "No se detectó la extensión del Simulador Creditan."
+        });
+      }, timeout);
+
+      window.postMessage({
+        source: "SERVICIOS_INTEGRALES_SIMULADOR",
+        type: "SIMULAR_PLAN_CREDITAN",
+        requestId,
+        payload: {
+          capital,
+          cuotas
+        }
+      }, "*");
+    });
+  }
+
+  async function ejecutarSimulacionCreditan() {
+    const importeFirmar = numeroInput(
+      $("#siRenovacionImporteFirmar")?.value
+    );
+
+    const cuotas = Number(
+      String($("#siRenovacionCuotas")?.value || "")
+        .replace(/\D/g, "")
+    ) || 0;
+
+    if (
+      !Number.isFinite(importeFirmar) ||
+      importeFirmar <= 0 ||
+      !Number.isInteger(cuotas) ||
+      cuotas <= 0
+    ) {
+      planCreditan = null;
+      cuotaCreditan = null;
+      simulacionError = "";
+      simulandoCreditan = false;
+      renderCalculos();
+      return;
+    }
+
+    const miSecuencia = ++secuenciaSimulacion;
+
+    planCreditan = null;
+    cuotaCreditan = null;
+    simulacionError = "";
+    simulandoCreditan = true;
+    renderCalculos();
+
+    const resultado = await consultarPlanCreditan(
+      importeFirmar,
+      cuotas
+    );
+
+    /*
+      Si el usuario cambió importe/cuotas mientras Creditan respondía,
+      ignoramos la respuesta vieja.
+    */
+    if (miSecuencia !== secuenciaSimulacion) {
+      return;
+    }
+
+    simulandoCreditan = false;
+
+    if (!resultado?.ok) {
+      planCreditan = null;
+      cuotaCreditan = null;
+      simulacionError =
+        resultado?.message ||
+        "Creditan no devolvió una cuota para esta simulación.";
+      renderCalculos();
+      return;
+    }
+
+    if (
+      Math.abs(
+        Number(resultado.capital || 0) - importeFirmar
+      ) >= 0.02 ||
+      Number(resultado.cuotas || 0) !== cuotas
+    ) {
+      planCreditan = null;
+      cuotaCreditan = null;
+      simulacionError =
+        "Creditan respondió con un plan distinto al solicitado.";
+      renderCalculos();
+      return;
+    }
+
+    planCreditan = resultado;
+    cuotaCreditan = Number(resultado.cuota || 0);
+    simulacionError = "";
+
+    renderCalculos();
+
+    console.info(
+      "[SERVICIOS INTEGRALES] Plan real recibido desde Creditan:",
+      resultado
+    );
+  }
+
+  function programarSimulacionCreditan() {
+    clearTimeout(timerSimulacion);
+
+    /*
+      Invalida cualquier respuesta anterior inmediatamente.
+    */
+    secuenciaSimulacion++;
+
+    planCreditan = null;
+    cuotaCreditan = null;
+    simulacionError = "";
+    simulandoCreditan = false;
+    renderCalculos();
+
+    timerSimulacion = setTimeout(() => {
+      ejecutarSimulacionCreditan();
+    }, 850);
   }
 
   function asegurarEstilos() {
@@ -870,9 +1100,9 @@
       </div>
 
       <div class="si-renovacion-nota">
-        Comisión Creditan: se replica la relación comprobada en Creditan.
-        Ejemplo: firma $2.240.000 → neto base $2.000.000 → comisión $240.000.
-        El 5% se calcula sobre la suma total de saldos seleccionados.
+        La cuota, el neto base y la comisión se confirman automáticamente
+        contra la grilla real de Creditan. El 5% se calcula sobre la suma
+        total de saldos seleccionados.
       </div>
 
       <div class="si-renovacion-subtitle">ANÁLISIS DE CUPO</div>
@@ -919,18 +1149,28 @@
     const inputFirmar = $("#siRenovacionImporteFirmar");
     const inputCuotas = $("#siRenovacionCuotas");
 
-    inputFirmar?.addEventListener("input", renderCalculos);
-    inputCuotas?.addEventListener("input", renderCalculos);
+    inputFirmar?.addEventListener("input", () => {
+      renderCalculos();
+      programarSimulacionCreditan();
+    });
+
+    inputCuotas?.addEventListener("input", () => {
+      renderCalculos();
+      programarSimulacionCreditan();
+    });
 
     inputFirmar?.addEventListener("blur", () => {
       const valor = numeroInput(inputFirmar.value);
+
       if (valor > 0) {
         inputFirmar.value = new Intl.NumberFormat("es-AR", {
           minimumFractionDigits: 0,
           maximumFractionDigits: 2
         }).format(valor);
       }
+
       renderCalculos();
+      programarSimulacionCreditan();
     });
 
     bloqueCreado = true;
@@ -942,6 +1182,11 @@
   function limpiarParaNuevoCliente(nuevoCuil) {
     seleccionadas.clear();
     cuotaCreditan = null;
+    planCreditan = null;
+    simulacionError = "";
+    simulandoCreditan = false;
+    secuenciaSimulacion++;
+    clearTimeout(timerSimulacion);
     cuilActual = nuevoCuil;
 
     const inputFirmar = $("#siRenovacionImporteFirmar");
@@ -981,6 +1226,10 @@
     setCuotaCreditan(valor) {
       const n = Number(valor);
 
+      planCreditan = null;
+      simulacionError = "";
+      simulandoCreditan = false;
+
       if (!Number.isFinite(n) || n < 0) {
         cuotaCreditan = null;
       } else {
@@ -991,8 +1240,15 @@
     },
 
     resetCuotaCreditan() {
+      planCreditan = null;
       cuotaCreditan = null;
+      simulacionError = "";
+      simulandoCreditan = false;
       renderCalculos();
+    },
+
+    simularAhora() {
+      return ejecutarSimulacionCreditan();
     },
 
     getEstado() {
@@ -1029,6 +1285,6 @@
   programarSync();
 
   console.info(
-    "[SERVICIOS INTEGRALES] Asistente de Renovación / Simulador V1.1 activo."
+    "[SERVICIOS INTEGRALES] Asistente de Renovación / Simulador V2 activo."
   );
 })();
