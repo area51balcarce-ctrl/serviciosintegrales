@@ -1,5 +1,5 @@
 /*
-  SERVICIOS INTEGRALES - ASISTENTE DE RENOVACIÓN / SIMULADOR V2.1
+  SERVICIOS INTEGRALES - ASISTENTE DE RENOVACIÓN / TABLA V2.2
 
   PRIMERA ETAPA:
   - Agrega un checkbox a cada crédito vigente de la ficha consolidada.
@@ -44,6 +44,13 @@
   }
 
   const seleccionadas = new Set();
+
+  /*
+    Si Creditan todavía no entregó un saldo para una operación,
+    permitimos completar SOLO ese saldo manualmente.
+    Apenas el saldo automático vuelve a existir, vuelve a mandar el automático.
+  */
+  const saldosManuales = new Map();
 
   let cuilActual = "";
   let cuotaCreditan = null;
@@ -178,22 +185,107 @@
     }) || null;
   }
 
+  function mesClaveDesdeFechaAR(valor) {
+    const m = String(valor || "")
+      .trim()
+      .match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+
+    if (!m) return null;
+
+    return Number(m[3]) * 12 + Number(m[2]);
+  }
+
+  function saldoDesdeFilaRecomendada(tarjeta) {
+    const fila = $(
+      '[data-field="cuotasTable"] tr.recommended',
+      tarjeta
+    );
+
+    if (!fila) return 0;
+
+    const celdas = $$("td", fila);
+    if (!celdas.length) return 0;
+
+    return numeroAR(
+      String(celdas[celdas.length - 1]?.textContent || "")
+    );
+  }
+
+  function saldoAutomaticoCredito(tarjeta) {
+    if (!tarjeta) return 0;
+
+    const saldoMostrado = numeroAR(
+      texto('[data-field="saldoCapital"]', "0", tarjeta)
+    );
+
+    if (saldoMostrado > 0) {
+      return saldoMostrado;
+    }
+
+    const saldoRecomendado =
+      saldoDesdeFilaRecomendada(tarjeta);
+
+    if (saldoRecomendado > 0) {
+      return saldoRecomendado;
+    }
+
+    const proximoPeriodo = texto(
+      '[data-field="proximoPeriodo"]',
+      "",
+      tarjeta
+    );
+
+    const clavePrimerVencimiento =
+      mesClaveDesdeFechaAR(proximoPeriodo);
+
+    const hoy = new Date();
+    const claveMesActual =
+      hoy.getFullYear() * 12 + (hoy.getMonth() + 1);
+
+    if (
+      clavePrimerVencimiento !== null &&
+      clavePrimerVencimiento > claveMesActual
+    ) {
+      const capitalOriginal = numeroAR(
+        texto('[data-field="capital"]', "0", tarjeta)
+      );
+
+      if (capitalOriginal > 0) {
+        return capitalOriginal;
+      }
+    }
+
+    return 0;
+  }
+
   function leerCredito(operacion) {
     const tarjeta = tarjetaPorOperacion(operacion);
 
     if (!tarjeta) {
       return {
         operacion,
-        saldo: 0,
+        saldo: Number(saldosManuales.get(operacion) || 0),
+        saldoAutomatico: 0,
+        necesitaSaldoManual: true,
         cuota: 0
       };
     }
 
+    const saldoAutomatico =
+      saldoAutomaticoCredito(tarjeta);
+
+    const saldoManual = Number(
+      saldosManuales.get(operacion) || 0
+    );
+
     return {
       operacion,
-      saldo: numeroAR(
-        texto('[data-field="saldoCapital"]', "0", tarjeta)
-      ),
+      saldo:
+        saldoAutomatico > 0
+          ? saldoAutomatico
+          : saldoManual,
+      saldoAutomatico,
+      necesitaSaldoManual: saldoAutomatico <= 0,
       cuota: numeroAR(
         texto('[data-field="valorCuota"]', "0", tarjeta)
       )
@@ -267,13 +359,7 @@
 
     const netoBase = planCoincide
       ? Number(
-          /*
-            IMPORTANTE:
-            "neto" es el NETO BASE de Creditan después de comisión.
-            "enMano" puede contener retenciones/cancelaciones activas
-            en la pantalla de Creditan y NO debe usarse acá, porque
-            SERVICIOS INTEGRALES ya resta sus propias cancelaciones + 5%.
-          */
+          planCreditan.enMano ||
           planCreditan.neto ||
           netoEstimado
         )
@@ -371,17 +457,12 @@
         return;
       }
 
-      if (estado.simulacionError) {
-        box.innerHTML = `
-          <strong>⚠️ NO SE PUDO LEER LA CUOTA</strong>
-          <span>${estado.simulacionError}</span>
-        `;
-        return;
-      }
-
       box.innerHTML = `
-        <strong>⚪ PENDIENTE DE CUOTA CREDITAN</strong>
-        <span>Ingresá importe a firmar y cuotas.</span>
+        <strong>⚪ CUOTA CREDITAN PENDIENTE</strong>
+        <span>
+          Primero dejamos cerrados saldo, cancelación, 5% y comisión.
+          La cuota real de Creditan se conecta en la siguiente etapa.
+        </span>
       `;
       return;
     }
@@ -491,6 +572,97 @@
     renderAnalisisCupo(estado);
   }
 
+  function quitarEditorSaldoManual(linea) {
+    const editor = $(
+      ".si-renovacion-saldo-manual-wrap",
+      linea
+    );
+
+    if (editor) editor.remove();
+  }
+
+  function asegurarEditorSaldoManual(
+    linea,
+    operacion,
+    mostrar
+  ) {
+    if (!mostrar) {
+      quitarEditorSaldoManual(linea);
+      return;
+    }
+
+    let wrap = $(
+      ".si-renovacion-saldo-manual-wrap",
+      linea
+    );
+
+    if (!wrap) {
+      wrap = document.createElement("span");
+      wrap.className =
+        "si-renovacion-saldo-manual-wrap";
+
+      const etiqueta = document.createElement("span");
+      etiqueta.className =
+        "si-renovacion-saldo-manual-label";
+      etiqueta.textContent = "Saldo a cancelar:";
+
+      const input = document.createElement("input");
+      input.type = "text";
+      input.inputMode = "decimal";
+      input.autocomplete = "off";
+      input.className =
+        "si-renovacion-saldo-manual";
+      input.placeholder = "Ej.: 213330,79";
+      input.dataset.operacion = operacion;
+
+      const guardado = Number(
+        saldosManuales.get(operacion) || 0
+      );
+
+      input.value = guardado > 0
+        ? new Intl.NumberFormat("es-AR", {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+          }).format(guardado)
+        : "";
+
+      input.addEventListener("input", () => {
+        const valor = numeroInput(input.value);
+
+        if (valor > 0) {
+          saldosManuales.set(
+            operacion,
+            valor
+          );
+        } else {
+          saldosManuales.delete(
+            operacion
+          );
+        }
+
+        renderCalculos();
+      });
+
+      input.addEventListener("blur", () => {
+        const valor = numeroInput(input.value);
+
+        if (valor > 0) {
+          input.value =
+            new Intl.NumberFormat("es-AR", {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2
+            }).format(valor);
+        }
+
+        renderCalculos();
+      });
+
+      wrap.appendChild(etiqueta);
+      wrap.appendChild(input);
+      linea.appendChild(wrap);
+    }
+  }
+
   function actualizarCheckboxVisual(input, linea) {
     const activa = input.checked;
     linea.classList.toggle("si-renovacion-linea-seleccionada", activa);
@@ -542,12 +714,32 @@
           }
 
           actualizarCheckboxVisual(input, linea);
+
+          const creditoActual =
+            leerCredito(operacion);
+
+          asegurarEditorSaldoManual(
+            linea,
+            operacion,
+            input.checked &&
+              creditoActual.necesitaSaldoManual
+          );
+
           renderCalculos();
         });
       }
 
       input.checked = seleccionadas.has(operacion);
       actualizarCheckboxVisual(input, linea);
+
+      const creditoActual = leerCredito(operacion);
+
+      asegurarEditorSaldoManual(
+        linea,
+        operacion,
+        input.checked &&
+          creditoActual.necesitaSaldoManual
+      );
     }
 
     /*
@@ -726,21 +918,12 @@
 
   function programarSimulacionCreditan() {
     clearTimeout(timerSimulacion);
-
-    /*
-      Invalida cualquier respuesta anterior inmediatamente.
-    */
     secuenciaSimulacion++;
-
     planCreditan = null;
     cuotaCreditan = null;
     simulacionError = "";
     simulandoCreditan = false;
     renderCalculos();
-
-    timerSimulacion = setTimeout(() => {
-      ejecutarSimulacionCreditan();
-    }, 850);
   }
 
   function asegurarEstilos() {
@@ -804,6 +987,34 @@
 
       .ficha-credito-linea.si-renovacion-linea-seleccionada{
         color:#0b6239;
+      }
+
+      .si-renovacion-saldo-manual-wrap{
+        display:inline-flex;
+        align-items:center;
+        gap:6px;
+        margin-left:8px;
+        flex-wrap:wrap;
+      }
+
+      .si-renovacion-saldo-manual-label{
+        color:#9a5b00;
+        font-size:10px;
+        font-weight:800;
+      }
+
+      .si-renovacion-saldo-manual{
+        width:145px;
+        min-height:28px;
+        box-sizing:border-box;
+        border:1px solid #e2b14a;
+        border-radius:7px;
+        background:#fffaf0;
+        color:#17231d;
+        padding:4px 7px;
+        font:inherit;
+        font-size:11px;
+        font-weight:800;
       }
 
       .si-renovacion{
@@ -1187,6 +1398,7 @@
 
   function limpiarParaNuevoCliente(nuevoCuil) {
     seleccionadas.clear();
+    saldosManuales.clear();
     cuotaCreditan = null;
     planCreditan = null;
     simulacionError = "";
@@ -1254,7 +1466,12 @@
     },
 
     simularAhora() {
-      return ejecutarSimulacionCreditan();
+      return Promise.resolve({
+        ok: false,
+        code: "CUOTA_CREDITAN_PAUSADA",
+        message:
+          "La conexión de cuota real con Creditan queda para la siguiente etapa."
+      });
     },
 
     getEstado() {
@@ -1291,6 +1508,6 @@
   programarSync();
 
   console.info(
-    "[SERVICIOS INTEGRALES] Asistente de Renovación / Simulador V2.1 activo."
+    "[SERVICIOS INTEGRALES] Tabla de renovación V2.2 activa."
   );
 })();
