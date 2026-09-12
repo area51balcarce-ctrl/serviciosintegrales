@@ -1,5 +1,5 @@
 /*
-  SERVICIOS INTEGRALES - ASISTENTE DE RENOVACIÓN / SIMULADOR V1
+  SERVICIOS INTEGRALES - ASISTENTE DE RENOVACIÓN / SIMULADOR V1.1
 
   PRIMERA ETAPA:
   - Agrega un checkbox a cada crédito vigente de la ficha consolidada.
@@ -69,18 +69,54 @@
 
     if (!s) return 0;
 
-    const ultimaComa = s.lastIndexOf(",");
-    const ultimoPunto = s.lastIndexOf(".");
+    const tieneComa = s.includes(",");
+    const tienePunto = s.includes(".");
 
-    if (ultimaComa > ultimoPunto) {
-      // Formato AR: 1.234.567,89
-      s = s.replace(/\./g, "").replace(",", ".");
-    } else if (ultimoPunto > ultimaComa) {
-      // Puede ser 1,234,567.89 o simplemente 2240000.50
-      s = s.replace(/,/g, "");
-    } else {
-      // Solo dígitos.
-      s = s.replace(/[.,]/g, "");
+    if (tieneComa && tienePunto) {
+      const ultimaComa = s.lastIndexOf(",");
+      const ultimoPunto = s.lastIndexOf(".");
+
+      if (ultimaComa > ultimoPunto) {
+        // Formato AR: 1.234.567,89
+        s = s.replace(/\./g, "").replace(",", ".");
+      } else {
+        // Formato US: 1,234,567.89
+        s = s.replace(/,/g, "");
+      }
+    } else if (tieneComa) {
+      const partes = s.split(",");
+
+      if (partes.length > 2) {
+        // 1,234,567 => separadores de miles
+        s = partes.join("");
+      } else {
+        const [entero, decimal = ""] = partes;
+
+        if (decimal.length === 3 && entero.length >= 1) {
+          // 2,240 => probablemente separador de miles
+          s = entero + decimal;
+        } else {
+          // 2240000,50
+          s = entero + "." + decimal;
+        }
+      }
+    } else if (tienePunto) {
+      const partes = s.split(".");
+
+      if (partes.length > 2) {
+        // Formato AR sin decimales: 2.000.000
+        s = partes.join("");
+      } else {
+        const [entero, decimal = ""] = partes;
+
+        if (decimal.length === 3 && entero.length >= 1) {
+          // 2.240 => separador de miles
+          s = entero + decimal;
+        } else {
+          // 2240000.50
+          s = entero + "." + decimal;
+        }
+      }
     }
 
     const n = Number(s);
@@ -993,6 +1029,6 @@
   programarSync();
 
   console.info(
-    "[SERVICIOS INTEGRALES] Asistente de Renovación / Simulador V1 activo."
+    "[SERVICIOS INTEGRALES] Asistente de Renovación / Simulador V1.1 activo."
   );
 })();
