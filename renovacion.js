@@ -457,12 +457,17 @@
         return;
       }
 
+      if (estado.simulacionError) {
+        box.innerHTML = `
+          <strong>⚠️ CUOTA CREDITAN NO ENCONTRADA</strong>
+          <span>${estado.simulacionError}</span>
+        `;
+        return;
+      }
+
       box.innerHTML = `
         <strong>⚪ CUOTA CREDITAN PENDIENTE</strong>
-        <span>
-          Primero dejamos cerrados saldo, cancelación, 5% y comisión.
-          La cuota real de Creditan se conecta en la siguiente etapa.
-        </span>
+        <span>Ingresá importe a firmar y cuotas. La búsqueda se hace automáticamente en la grilla real de Creditan.</span>
       `;
       return;
     }
@@ -918,12 +923,35 @@
 
   function programarSimulacionCreditan() {
     clearTimeout(timerSimulacion);
+
     secuenciaSimulacion++;
     planCreditan = null;
     cuotaCreditan = null;
     simulacionError = "";
     simulandoCreditan = false;
     renderCalculos();
+
+    const importeFirmar = numeroInput(
+      $("#siRenovacionImporteFirmar")?.value
+    );
+
+    const cuotas = Number(
+      String($("#siRenovacionCuotas")?.value || "")
+        .replace(/\D/g, "")
+    ) || 0;
+
+    if (
+      !Number.isFinite(importeFirmar) ||
+      importeFirmar <= 0 ||
+      !Number.isInteger(cuotas) ||
+      cuotas <= 0
+    ) {
+      return;
+    }
+
+    timerSimulacion = setTimeout(() => {
+      ejecutarSimulacionCreditan();
+    }, 1200);
   }
 
   function asegurarEstilos() {
@@ -1508,6 +1536,6 @@
   programarSync();
 
   console.info(
-    "[SERVICIOS INTEGRALES] Tabla de renovación V2.2 activa."
+    "[SERVICIOS INTEGRALES] Tabla de renovación V2.3 + cuota Creditan automática activa."
   );
 })();
