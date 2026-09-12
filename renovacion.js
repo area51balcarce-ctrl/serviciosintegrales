@@ -1,5 +1,5 @@
 /*
-  SERVICIOS INTEGRALES - ASISTENTE DE RENOVACIÓN / SIMULADOR V2
+  SERVICIOS INTEGRALES - ASISTENTE DE RENOVACIÓN / SIMULADOR V2.1
 
   PRIMERA ETAPA:
   - Agrega un checkbox a cada crédito vigente de la ficha consolidada.
@@ -267,7 +267,13 @@
 
     const netoBase = planCoincide
       ? Number(
-          planCreditan.enMano ||
+          /*
+            IMPORTANTE:
+            "neto" es el NETO BASE de Creditan después de comisión.
+            "enMano" puede contener retenciones/cancelaciones activas
+            en la pantalla de Creditan y NO debe usarse acá, porque
+            SERVICIOS INTEGRALES ya resta sus propias cancelaciones + 5%.
+          */
           planCreditan.neto ||
           netoEstimado
         )
@@ -1285,6 +1291,6 @@
   programarSync();
 
   console.info(
-    "[SERVICIOS INTEGRALES] Asistente de Renovación / Simulador V2 activo."
+    "[SERVICIOS INTEGRALES] Asistente de Renovación / Simulador V2.1 activo."
   );
 })();
