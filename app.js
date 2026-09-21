@@ -55,6 +55,7 @@ function adaptarResultado(result,cuilConsultado,organismoConsultado){
       capital:numeroAR(op?.capital??op?.capitalOriginal??0),
       cuotas:op?.cuotas??"—",
       valorCuota:numeroAR(op?.cuota??op?.valorCuota??0),
+      fechaSolicitud:op?.liquidacion||"—",
       proximoPeriodo:op?.primerVencimiento||op?.proximoPeriodo||"—",
       saldoCapital:numeroAR(op?.saldoCapital??0),
       detalleCuotas:Array.isArray(op?.detalleCuotas)?op.detalleCuotas:[]
@@ -64,6 +65,14 @@ function adaptarResultado(result,cuilConsultado,organismoConsultado){
 
 function renderCredit(c){
   const node=creditTemplate.content.firstElementChild.cloneNode(true);
+
+  /*
+    La fecha de solicitud se conserva en la tarjeta como dato interno.
+    No modifica visualmente la tarjeta de Estado de Cuenta.
+    ficha.js podrá leerla desde node.dataset.fechaSolicitud.
+  */
+  node.dataset.fechaSolicitud=c.fechaSolicitud||"—";
+
   setText(node,"operacion",c.operacion??"—");
   setText(node,"solicitud",c.solicitud??"—");
   setText(node,"capital",fmtMoney.format(Number(c.capital||0)));
