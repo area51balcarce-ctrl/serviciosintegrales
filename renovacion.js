@@ -837,11 +837,9 @@
     ==================================================
   */
 
-function abrirOfertasCreditan(
-  capital,
-  cuotas,
-  timeout = 12000
-) {
+  function abrirOfertasCreditan(
+    timeout = 12000
+  ) {
     return new Promise((resolve) => {
       const requestId =
         crearRequestIdSimulacion();
@@ -919,20 +917,15 @@ function abrirOfertasCreditan(
           });
         }, timeout);
 
-window.postMessage({
-  source:
-    "SERVICIOS_INTEGRALES_SIMULADOR",
+      window.postMessage({
+        source:
+          "SERVICIOS_INTEGRALES_SIMULADOR",
 
-  type:
-    "ABRIR_OFERTAS_CREDITAN",
+        type:
+          "ABRIR_OFERTAS_CREDITAN",
 
-  requestId,
-
-  payload: {
-    capital,
-    cuotas
-  }
-}, "*");
+        requestId
+      }, "*");
     });
   }
 
@@ -966,14 +959,11 @@ window.postMessage({
         "Abriendo Buscar oferta en Creditan...";
     }
 
-try {
-  const resultado =
-    await abrirOfertasCreditan(
-      capital,
-      cuotas
-    );
+    try {
+      const resultado =
+        await abrirOfertasCreditan();
 
-  if (!resultado?.ok) {
+      if (!resultado?.ok) {
         if (estado) {
           estado.textContent =
             resultado?.message ||
