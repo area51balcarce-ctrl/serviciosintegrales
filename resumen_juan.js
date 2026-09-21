@@ -94,7 +94,10 @@
           : "—",
         saldoCapital: tarjeta
           ? texto('[data-field="saldoCapital"]', "$ 0,00", tarjeta)
-          : "$ 0,00"
+          : "$ 0,00",
+        fechaSolicitud: tarjeta
+          ? String(tarjeta.dataset.fechaSolicitud || "—").trim()
+          : "—"
       };
     });
   }
@@ -186,6 +189,7 @@
                 Valor cuota <b>${escaparHtml(credito.valorCuota)}</b>
                 · cuota <b>${escaparHtml(credito.cuotaActual)} de ${escaparHtml(credito.cuotasTotales)}</b>
                 · Saldo capital <b>${escaparHtml(credito.saldoCapital)}</b>
+                · Fecha solicitud <b>${escaparHtml(credito.fechaSolicitud)}</b>
               </div>
               ${
                 credito.seleccionado
