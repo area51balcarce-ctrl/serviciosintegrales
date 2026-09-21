@@ -980,13 +980,35 @@
 
       if (estado) {
         estado.textContent =
-          "Buscar oferta abierto en Creditan.";
+          "Buscar oferta abierto. Cargando importe y cuotas en Creditan...";
       }
 
       console.info(
         "[SERVICIOS INTEGRALES] MOSTRAR OFERTA correcto:",
         resultado
       );
+
+      /*
+        ÚNICA ETAPA NUEVA:
+        una vez que Buscar oferta ya está abierto,
+        usamos el canal de simulación EXISTENTE para
+        enviar Importe a firmar + Cuotas a Creditan.
+
+        Ese canal ya se encarga de completar Solicita,
+        completar Cuotas, esperar el refresco de GeneXus
+        y devolver la cuota real.
+      */
+      await ejecutarSimulacionCreditan();
+
+      if (estado) {
+        estado.textContent =
+          planCreditan?.ok
+            ? "Oferta cargada y cuota recibida desde Creditan."
+            : (
+                simulacionError ||
+                "Buscar oferta abierto en Creditan."
+              );
+      }
     } catch (error) {
       if (estado) {
         estado.textContent =
