@@ -149,6 +149,15 @@
         tarjeta.querySelector('[data-field="saldoCapital"]')?.textContent || "$ 0,00"
       ).trim();
 
+      /*
+        app.js guarda la fecha de solicitud proveniente de Creditan
+        dentro de la propia tarjeta, sin modificar visualmente
+        el Estado de Cuenta.
+      */
+      const fechaSolicitud = String(
+        tarjeta.dataset.fechaSolicitud || "—"
+      ).trim();
+
       const cuotaActual = cuotaActualDesdeTarjeta(tarjeta);
 
       const linea = document.createElement("div");
@@ -166,6 +175,9 @@
       const saldoStrong = document.createElement("strong");
       saldoStrong.textContent = saldoCapital;
 
+      const fechaStrong = document.createElement("strong");
+      fechaStrong.textContent = fechaSolicitud;
+
       linea.append("• ");
       linea.appendChild(operacionStrong);
       linea.append(" - Valor cuota ");
@@ -174,6 +186,8 @@
       linea.appendChild(progresoStrong);
       linea.append(" - Saldo capital ");
       linea.appendChild(saldoStrong);
+      linea.append(" - Fecha solicitud ");
+      linea.appendChild(fechaStrong);
 
       contenedor.appendChild(linea);
     }
