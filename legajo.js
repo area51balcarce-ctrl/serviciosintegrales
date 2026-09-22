@@ -1,6 +1,6 @@
 
 /* SERVICIOS INTEGRALES — LEGAJO VISUAL V1
-   Diseño solamente. No carga ni almacena documentos o contraseñas.
+   Interfaz de selección local de DNI. No envía ni almacena documentos todavía.
    Conserva los datos históricos de Supabase y no altera otros módulos.
 */
 (() => {
@@ -78,6 +78,9 @@
       color:#50635a;
       background:white;
     }
+    .si-legajo-chip {cursor:pointer;}
+    .si-legajo-chip:focus-visible {outline:2px solid #0d633b;}
+    .si-legajo-dni-status {font-size:11px;color:#617069;min-height:14px;}
     .si-legajo-recibos {
       display:flex;
       align-items:center;
@@ -111,16 +114,19 @@
   bloque.innerHTML = `
     <h3 class="si-legajo-title">📁 Legajo del cliente</h3>
     <p class="si-legajo-sub">
-      Documentación y gestiones · Diseño visual, pendiente de conexión
+      Documentación y gestiones · Carga de DNI en preparación
     </p>
     <div class="si-legajo-grid">
       <div class="si-legajo-tile">
         <span class="si-legajo-icon">🪪</span>
         <strong>DNI</strong>
         <div class="si-legajo-dni">
-          <span class="si-legajo-chip">Frente · PDF o JPG</span>
-          <span class="si-legajo-chip">Dorso · PDF o JPG</span>
+          <button type="button" class="si-legajo-chip" data-dni="frente">Seleccionar frente</button>
+          <button type="button" class="si-legajo-chip" data-dni="dorso">Seleccionar dorso</button>
         </div>
+        <div class="si-legajo-dni-status" id="siDniEstado">Todavía no se guardaron documentos.</div>
+        <input type="file" id="siDniFrente" accept="application/pdf,image/jpeg" hidden>
+        <input type="file" id="siDniDorso" accept="application/pdf,image/jpeg" hidden>
       </div>
       <div class="si-legajo-tile">
         <span class="si-legajo-icon">📄</span>
@@ -147,6 +153,26 @@
     </div>
   `;
 
+  const archivos = {frente:null, dorso:null};
+  const estado = bloque.querySelector("#siDniEstado");
+  bloque.querySelectorAll("[data-dni]").forEach(btn => {
+    const lado = btn.dataset.dni;
+    const input = bloque.querySelector(lado === "frente" ? "#siDniFrente" : "#siDniDorso");
+    btn.addEventListener("click", () => input.click());
+    input.addEventListener("change", () => {
+      const file = input.files && input.files[0];
+      if (!file) return;
+      if (!["application/pdf", "image/jpeg"].includes(file.type) || file.size > 10 * 1024 * 1024) {
+        input.value = "";
+        estado.textContent = "Solo PDF o JPG, máximo 10 MB.";
+        return;
+      }
+      archivos[lado] = file;
+      btn.textContent = (lado === "frente" ? "Frente" : "Dorso") + ": " + file.name;
+      estado.textContent = "Archivos seleccionados localmente. Todavía no se subieron a Supabase.";
+    });
+  });
+
   function ubicar() {
     const detalle = document.querySelector('#fichaDetalleCreditos');
     if (detalle && bloque.previousElementSibling !== detalle) {
@@ -169,5 +195,5 @@
     observer.observe(ficha, { childList:true });
   }
 
-  console.info('[SI] Legajo visual V1 activo. Sin carga ni almacenamiento de datos.');
+  console.info('[SI] Legajo: selección local habilitada. Sin subida ni almacenamiento todavía.');
 })();
