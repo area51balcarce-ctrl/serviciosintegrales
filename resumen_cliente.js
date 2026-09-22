@@ -119,14 +119,6 @@
             )
           : "—",
 
-        saldoCapital: tarjeta
-          ? texto(
-              '[data-field="saldoCapital"]',
-              "$ 0,00",
-              tarjeta
-            )
-          : "$ 0,00",
-
         fechaSolicitud: tarjeta
           ? String(
               tarjeta.dataset.fechaSolicitud || "—"
@@ -199,13 +191,6 @@
                 de
                 ${escaparHtml(
                   credito.cuotasTotales
-                )}
-              </b>
-
-              · Saldo capital
-              <b>
-                ${escaparHtml(
-                  credito.saldoCapital
                 )}
               </b>
 
