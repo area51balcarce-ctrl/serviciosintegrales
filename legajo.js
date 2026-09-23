@@ -370,7 +370,14 @@
   })));
   (async () => {
     try {
-      const perfil = window.ServiciosIntegralesAuth?.perfil;
+      // auth_guard.js carga el perfil de forma asíncrona. Esperamos su publicación
+      // antes de iniciar el acceso protegido; no cambiamos la autenticación del Legajo.
+      let perfil = window.ServiciosIntegralesAuth?.perfil;
+      const limiteEspera = Date.now() + 10000;
+      while (!perfil?.email && Date.now() < limiteEspera) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        perfil = window.ServiciosIntegralesAuth?.perfil;
+      }
       if (!perfil?.email) throw new Error('No se encontró el usuario interno actual.');
       correo = perfil.email.trim().toLowerCase();
       const {createClient} = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
