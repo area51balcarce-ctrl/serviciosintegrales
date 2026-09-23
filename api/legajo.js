@@ -1,5 +1,5 @@
 /* SERVICIOS INTEGRALES — api/legajo.js
- * API privada para DNI frente/dorso. NO acepta el selector local como autenticación.
+ * API privada para DNI frente/dorso, Servicio y CBU. NO acepta el selector local como autenticación.
  * Requiere sesión real de Supabase Auth y una lista de correos autorizados.
  * No usa paquetes externos. Node.js / Vercel Serverless Function.
  *
@@ -80,8 +80,8 @@ export default async function handler(req, res) {
     }
 
     const { accion, cuil, lado, extension } = req.body || {};
-    if (!/^\d{11}$/.test(String(cuil || '')) || !['frente', 'dorso'].includes(lado)) {
-      return responder(res, 400, { error: 'CUIL o lado de DNI inválido' });
+    if (!/^\d{11}$/.test(String(cuil || '')) || !['frente', 'dorso', 'servicio', 'cbu'].includes(lado)) {
+      return responder(res, 400, { error: 'CUIL o tipo de documento inválido' });
     }
     if (!['preparar_subida', 'ver', 'estado'].includes(accion)) {
       return responder(res, 400, { error: 'Acción no admitida' });
@@ -89,12 +89,24 @@ export default async function handler(req, res) {
 
     // Un único nombre por lado: permite reemplazar documentos sin crear copias dispersas.
     // La extensión se conserva en un manifiesto? No: al consultar, buscamos entre las admitidas.
-    const prefijo = `${cuil}/dni/${lado}`;
+    const carpeta = ['frente', 'dorso'].includes(lado) ? 'dni' : lado;
+    const nombre = ['frente', 'dorso'].includes(lado) ? lado : 'documento';
+    const prefijo = `${cuil}/${carpeta}/${nombre}`;
     const opciones = ['pdf', 'jpg', 'jpeg', 'png'];
 
     if (accion === 'preparar_subida') {
       if (!Object.hasOwn(MIME, extension)) {
         return responder(res, 400, { error: 'Formato no admitido' });
+      }
+      // Si ya existe otro formato, evitamos dejar dos versiones del mismo documento.
+      const previo = await supabaseFetch(`${base}/storage/v1/object/list/${BUCKET}`, serviceKey, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prefix: `${cuil}/${carpeta}`, limit: 100 })
+      });
+      if (!previo.ok) return responder(res, 502, { error: 'No se pudo comprobar el documento anterior' });
+      const previos = await previo.json().catch(() => []);
+      if (Array.isArray(previos) && previos.some(x => opciones.some(ext => x.name === `${nombre}.${ext}`) && x.name !== `${nombre}.${extension}`)) {
+        return responder(res, 409, { error: 'Ya existe este documento en otro formato. Para reemplazarlo, usá el mismo formato o solicitá revisar el anterior.' });
       }
       const ruta = `${prefijo}.${extension}`;
       const r = await supabaseFetch(
@@ -118,7 +130,7 @@ export default async function handler(req, res) {
     const listResp = await supabaseFetch(`${base}/storage/v1/object/list/${BUCKET}`, serviceKey, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prefix: `${cuil}/dni`, limit: 100 })
+      body: JSON.stringify({ prefix: `${cuil}/${carpeta}`, limit: 100 })
     });
     if (!listResp.ok) {
       const detalle = errorStorage(await listResp.json().catch(() => ({})));
@@ -127,13 +139,13 @@ export default async function handler(req, res) {
     }
     const objetos = await listResp.json();
     const encontrados = (Array.isArray(objetos) ? objetos : [])
-      .filter(x => opciones.some(ext => x.name === `${lado}.${ext}`));
+      .filter(x => opciones.some(ext => x.name === `${nombre}.${ext}`));
     if (accion === 'estado') return responder(res, 200, { existe: encontrados.length > 0 });
     if (!encontrados.length) return responder(res, 404, { error: 'Documento no cargado' });
     if (encontrados.length > 1) {
       return responder(res, 409, { error: 'Hay varios formatos para este lado. Revisar antes de abrir.' });
     }
-    const ruta = `${cuil}/dni/${encontrados[0].name}`;
+    const ruta = `${cuil}/${carpeta}/${encontrados[0].name}`;
     const r = await supabaseFetch(`${base}/storage/v1/object/sign/${BUCKET}/${ruta}`, serviceKey, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
