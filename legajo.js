@@ -156,6 +156,20 @@
         <button type="button" class="si-legajo-chip" id="siEscritoAbrir">Generar escrito</button>
         <span class="si-legajo-note">Usa la oferta real y la selección del asistente</span>
       </div>
+      <div class="si-legajo-tile" id="siSelfiesTile" style="grid-column:1/-1">
+        <span class="si-legajo-icon">📸</span>
+        <strong>Selfies del cliente</strong>
+        <span class="si-legajo-note">Varias fotografías por CUIL · JPG o PNG · Máximo 10 MB por foto</span>
+        <input type="file" id="siSelfiesArchivos" accept="image/jpeg,image/png" multiple hidden>
+        <div class="si-legajo-dni">
+          <button type="button" class="si-legajo-chip" id="siSelfiesElegir">Seleccionar selfies</button>
+          <button type="button" class="si-legajo-chip" id="siSelfiesGuardar" hidden>Guardar selfies</button>
+          <button type="button" class="si-legajo-chip" id="siSelfiesListar">Ver fotografías</button>
+        </div>
+        <span class="si-legajo-note" id="siSelfiesEstado" role="status" aria-live="polite">Consultá un cliente para comenzar.</span>
+        <div id="siSelfiesPrevias" style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center"></div>
+        <div id="siSelfiesGaleria" style="display:flex;flex-wrap:wrap;gap:10px;justify-content:center;width:100%"></div>
+      </div>
     </div>
     <div class="si-legajo-recibos" style="display:block;text-align:left">
       <strong>🔐 Acceso a recibos</strong>
@@ -449,6 +463,130 @@
       mensaje(nombre + ' abierto. El enlace vence en 60 segundos.');
     }));
     // Las acciones se muestran desde habilitar() cuando hay sesión válida.
+  }
+
+  // SELFIES: módulo aislado, sin alterar DNI, Servicio, CBU ni Escrito.
+  {
+    const tile = bloque.querySelector('#siSelfiesTile');
+    const entrada = tile.querySelector('#siSelfiesArchivos');
+    const elegir = tile.querySelector('#siSelfiesElegir');
+    const guardar = tile.querySelector('#siSelfiesGuardar');
+    const listar = tile.querySelector('#siSelfiesListar');
+    const estadoSelfies = tile.querySelector('#siSelfiesEstado');
+    const previas = tile.querySelector('#siSelfiesPrevias');
+    const galeria = tile.querySelector('#siSelfiesGaleria');
+    let seleccion = [];
+    let cuilSeleccionSelfies = null;
+    let cuilMostrado = null;
+    let cargando = false;
+    let urlsLocales = [];
+    let consulta = 0;
+    const limpiarPrevias = () => {
+      urlsLocales.forEach(url => URL.revokeObjectURL(url));
+      urlsLocales = [];
+      previas.replaceChildren();
+    };
+    const refrescarCliente = () => {
+      const cuil = cuilActual();
+      if (cuil === cuilMostrado) return;
+      cuilMostrado = cuil;
+      consulta++;
+      seleccion = [];
+      cuilSeleccionSelfies = null;
+      entrada.value = '';
+      guardar.hidden = true;
+      limpiarPrevias();
+      galeria.replaceChildren();
+      estadoSelfies.textContent = cuil ? 'Podés seleccionar selfies o consultar las guardadas.' : 'Consultá un cliente para comenzar.';
+    };
+    const nodo = document.querySelector('#fichaCuil');
+    if (nodo) new MutationObserver(refrescarCliente).observe(nodo,{childList:true,characterData:true,subtree:true});
+    refrescarCliente();
+    async function apiSelfies(accion, datos, cuil) {
+      const sesion = await sesionActual();
+      const resp = await fetch('/api/legajo', {
+        method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+sesion.access_token},
+        body:JSON.stringify({accion,cuil,...datos}),cache:'no-store'
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(data.error || 'No se pudo consultar las selfies.');
+      return data;
+    }
+    async function trabajar(fn) {
+      if (cargando) return;
+      refrescarCliente();
+      if (!cuilMostrado) {estadoSelfies.textContent='Primero consultá un cliente con CUIL válido.';return;}
+      cargando=true;
+      for (const btn of [elegir,guardar,listar]) btn.disabled=true;
+      try {await fn(cuilMostrado);}
+      catch(e) {estadoSelfies.textContent=e.message || 'No se pudo completar la operación.';}
+      finally {cargando=false;for(const btn of [elegir,guardar,listar]) btn.disabled=false;}
+    }
+    elegir.addEventListener('click',()=>{refrescarCliente();if(cuilMostrado) entrada.click();else estadoSelfies.textContent='Primero consultá un cliente.';});
+    entrada.addEventListener('change',()=>{
+      refrescarCliente();
+      const fotos=Array.from(entrada.files || []);
+      if (!cuilMostrado || !fotos.length) return;
+      if (fotos.some(f=>!['image/jpeg','image/png'].includes(f.type)||f.size>10*1024*1024)) {
+        entrada.value='';seleccion=[];guardar.hidden=true;limpiarPrevias();
+        estadoSelfies.textContent='Solo JPG o PNG, máximo 10 MB por fotografía.';return;
+      }
+      seleccion=fotos;cuilSeleccionSelfies=cuilMostrado;
+      limpiarPrevias();
+      for (const foto of fotos) {
+        const url=URL.createObjectURL(foto);urlsLocales.push(url);
+        const img=document.createElement('img');img.src=url;img.alt='Vista previa de selfie seleccionada';
+        img.style.cssText='width:88px;height:88px;object-fit:cover;border-radius:9px;border:1px solid #dbe9e1';
+        previas.appendChild(img);
+      }
+      guardar.hidden=false;
+      estadoSelfies.textContent=`${fotos.length} fotografía(s) seleccionada(s). Todavía no se guardaron.`;
+    });
+    async function mostrarGaleria(cuil) {
+      const miConsulta=++consulta;
+      estadoSelfies.textContent='Consultando fotografías guardadas…';
+      const {fotos}=await apiSelfies('selfies_listar',{},cuil);
+      if (cuilActual()!==cuil || miConsulta!==consulta) return;
+      galeria.replaceChildren();
+      if (!fotos.length) {estadoSelfies.textContent='Este cliente todavía no tiene selfies guardadas.';return;}
+      for (const foto of fotos) {
+        const card=document.createElement('div');
+        card.style.cssText='width:130px;min-height:95px;padding:8px;border:1px solid #dbe9e1;border-radius:10px;background:white;display:grid;gap:6px;justify-items:center';
+        const icono=document.createElement('span');icono.textContent='📸';icono.style.fontSize='28px';
+        const fecha=document.createElement('small');
+        const d=foto.fecha?new Date(foto.fecha):null;
+        fecha.textContent=d && !Number.isNaN(d.getTime())?d.toLocaleString('es-AR'):'Fotografía guardada';
+        fecha.style.cssText='font-size:10px;color:#617069';
+        const ver=document.createElement('button');ver.type='button';ver.className='si-legajo-chip';ver.textContent='Ver selfie';
+        ver.addEventListener('click',()=>trabajar(async actual=>{
+          if(actual!==cuil) throw new Error('Cambió el cliente. Volvé a consultar las selfies.');
+          const {url}=await apiSelfies('selfies_ver',{nombre:foto.nombre},cuil);
+          if(cuilActual()!==cuil) return;
+          const a=document.createElement('a');a.href=url;a.target='_blank';a.rel='noopener noreferrer';
+          document.body.appendChild(a);a.click();a.remove();
+          estadoSelfies.textContent='Selfie abierta. El enlace temporal vence en 60 segundos.';
+        }));
+        card.append(icono,fecha,ver);galeria.appendChild(card);
+      }
+      estadoSelfies.textContent=`${fotos.length} fotografía(s) guardada(s) para este cliente.`;
+    }
+    listar.addEventListener('click',()=>trabajar(mostrarGaleria));
+    guardar.addEventListener('click',()=>trabajar(async cuil=>{
+      if (!seleccion.length || cuilSeleccionSelfies!==cuil) throw new Error('Volvé a seleccionar las selfies para este cliente.');
+      const pendientes=[...seleccion];let guardadas=0;
+      for(const foto of pendientes) {
+        if(cuilActual()!==cuil) throw new Error('Cambió el cliente; se detuvo la carga.');
+        estadoSelfies.textContent=`Guardando selfie ${guardadas+1} de ${pendientes.length}…`;
+        const extension=foto.type==='image/png'?'png':'jpg';
+        const {url,metodo,tipo}=await apiSelfies('selfies_preparar',{extension},cuil);
+        const resp=await fetch(url,{method:metodo||'PUT',headers:{'Content-Type':tipo||foto.type},body:foto});
+        if(!resp.ok) throw new Error(`Se guardaron ${guardadas} de ${pendientes.length}. Falló la siguiente (${resp.status}).`);
+        guardadas++;
+      }
+      seleccion=[];cuilSeleccionSelfies=null;entrada.value='';guardar.hidden=true;limpiarPrevias();
+      estadoSelfies.textContent=`${guardadas} selfie(s) guardada(s) correctamente.`;
+      await mostrarGaleria(cuil);
+    }));
   }
 
   // ESCRITO CREDITAN — módulo aislado. Lee el estado público del asistente,
