@@ -220,6 +220,7 @@
   `;
   tileDni.appendChild(extra);
 
+  const authPanel = extra.querySelector('#siLegajoAuth');
   const authEstado = extra.querySelector('#siLegajoAuthEstado');
   const inicio = extra.querySelector('#siLegajoAuthInicio');
   const acciones = extra.querySelector('#siLegajoAcciones');
@@ -245,8 +246,11 @@
   function habilitar(sesion) {
     const autorizado = Boolean(sesion?.access_token && sesion?.user?.email &&
       sesion.user.email.toLowerCase() === correo.toLowerCase());
+    // Con la sesión activa, ocultamos el recuadro completo para evitar cierres accidentales.
+    // Si la sesión vence, reaparece el acceso por correo.
+    authPanel.hidden = autorizado;
+    btnSalir.hidden = true;
     inicio.hidden = autorizado;
-    btnSalir.hidden = !autorizado;
     acciones.hidden = !autorizado;
     acciones.style.display = autorizado ? 'flex' : 'none';
     authEstado.textContent = autorizado
