@@ -157,11 +157,27 @@
         <span class="si-legajo-note">Usa la oferta real y la selección del asistente</span>
       </div>
     </div>
-    <div class="si-legajo-recibos">
-      <span class="si-legajo-icon">🔒</span>
-      <div>
-        <strong>Acceso a recibos</strong>
-        <small>Acceso protegido · Próximamente</small>
+    <div class="si-legajo-recibos" style="display:block;text-align:left">
+      <strong>🔐 Acceso a recibos</strong>
+      <small>Se identifica automáticamente por el CUIL y la repartición del cliente.</small>
+      <div id="siRecibosPanel" style="margin-top:12px;display:grid;gap:9px">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:9px">
+          <div><small>CUIL</small><strong id="siRecibosCuil" style="display:block">—</strong></div>
+          <div><small>Repartición</small><strong id="siRecibosSector" style="display:block">—</strong></div>
+        </div>
+        <label style="font-size:12px">Usuario<br><input id="siRecibosUsuario" autocomplete="off" maxlength="120" style="width:100%;box-sizing:border-box;padding:8px;border:1px solid #b7dbc6;border-radius:7px"></label>
+        <label style="font-size:12px">Contraseña<br>
+          <span style="display:flex;gap:6px"><input id="siRecibosClave" type="password" autocomplete="off" maxlength="256" style="min-width:0;flex:1;padding:8px;border:1px solid #b7dbc6;border-radius:7px">
+          <button type="button" id="siRecibosMostrar" class="si-legajo-chip">👁️ Ver</button>
+          <button type="button" id="siRecibosCopiar" class="si-legajo-chip">Copiar</button></span>
+        </label>
+        <div style="display:flex;flex-wrap:wrap;gap:7px">
+          <button type="button" id="siRecibosCargar" class="si-legajo-chip">Consultar guardados</button>
+          <button type="button" id="siRecibosGuardar" class="si-legajo-chip">💾 Guardar credenciales</button>
+          <button type="button" id="siRecibosAbrir" class="si-legajo-chip">🌐 Abrir sistema oficial ↗</button>
+        </div>
+        <small id="siRecibosEstado" role="status" aria-live="polite">Consultá un cliente para comenzar.</small>
+        <small>El sistema oficial usa HTTP: ingresá los datos manualmente y evitá redes públicas.</small>
       </div>
     </div>
   `;
@@ -533,6 +549,122 @@
     escritoGenerado=''; copiarEscrito.disabled=true;
     estadoEscrito.textContent='Actualizá la vista previa después de modificar los datos.';
   });
+
+   // ACCESO A RECIBOS: módulo independiente; no modifica el Escrito ni los documentos.
+   const panelRecibos = bloque.querySelector('#siRecibosPanel');
+   const rc = id => panelRecibos.querySelector('#' + id);
+   const rUsuario = rc('siRecibosUsuario');
+   const rClave = rc('siRecibosClave');
+   const rEstado = rc('siRecibosEstado');
+   const rCargar = rc('siRecibosCargar');
+   const rGuardar = rc('siRecibosGuardar');
+   const rAbrir = rc('siRecibosAbrir');
+   const rCopiar = rc('siRecibosCopiar');
+   const rMostrar = rc('siRecibosMostrar');
+   const portalesRecibos = {
+     hospital: 'http://hospitalfossati.dyndns.org:2000/recibos/recibos.html',
+     municipio: 'http://201.231.185.115:8080/recibodigital/Recibos.html'
+   };
+   let rIdentidad = '';
+   let rConsulta = 0;
+   let rOcupado = false;
+   function sectorRecibos() {
+     const organismo = String(document.querySelector('#fichaOrganismo')?.textContent || '')
+       .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+     if (/HOSPITAL|FOSSATI/.test(organismo)) return 'hospital';
+     if (/MUNICIP|MUNICIPAL/.test(organismo)) return 'municipio';
+     return null;
+   }
+   function refrescarRecibos() {
+     const cuil = cuilActual();
+     const sector = sectorRecibos();
+     const identidad = (cuil || '') + '|' + (sector || '');
+     if (identidad !== rIdentidad) {
+       rIdentidad = identidad;
+       rConsulta++;
+       rUsuario.value = '';
+       rClave.value = '';
+       rClave.type = 'password';
+       rMostrar.textContent = '👁️ Ver';
+       rEstado.textContent = !cuil ? 'Primero consultá un cliente.' :
+         !sector ? 'Repartición no identificada: no se puede guardar hasta confirmar Hospital o Municipio.' :
+         'Cliente identificado. Podés consultar o guardar sus credenciales.';
+     }
+     rc('siRecibosCuil').textContent = cuil || '—';
+     rc('siRecibosSector').textContent = sector === 'hospital' ? '🏥 Hospital Fossati' :
+       sector === 'municipio' ? '🏛️ Municipio' : 'No identificada';
+     for (const boton of [rCargar,rGuardar,rAbrir]) boton.disabled = !cuil || !sector || rOcupado;
+     return {cuil,sector,identidad};
+   }
+   const nodoCuil = document.querySelector('#fichaCuil');
+   const nodoOrganismo = document.querySelector('#fichaOrganismo');
+   const rObserver = new MutationObserver(refrescarRecibos);
+   for (const nodo of [nodoCuil,nodoOrganismo]) if (nodo)
+     rObserver.observe(nodo,{childList:true,characterData:true,subtree:true});
+   refrescarRecibos();
+   async function ejecutarRecibos(fn) {
+     if (rOcupado) return;
+     const antes = refrescarRecibos();
+     if (!antes.cuil || !antes.sector) return;
+     rOcupado = true;
+     refrescarRecibos();
+     const secuencia = ++rConsulta;
+     try { await fn(antes,secuencia); }
+     catch(e) { if (rIdentidad === antes.identidad && rConsulta === secuencia)
+       rEstado.textContent = e.message || 'No se pudo completar la operación.'; }
+     finally { rOcupado = false; refrescarRecibos(); }
+   }
+   async function apiRecibos(accion, datos) {
+     const sesion = await sesionActual();
+     const resp = await fetch('/api/legajo', {
+       method:'POST',
+       headers:{'Content-Type':'application/json','Authorization':'Bearer ' + sesion.access_token},
+       body:JSON.stringify({accion,...datos}),
+       cache:'no-store'
+     });
+     const data = await resp.json().catch(() => ({}));
+     if (!resp.ok) throw new Error(data.error || 'No se pudo consultar el Legajo.');
+     return data;
+   }
+   rCargar.addEventListener('click', () => ejecutarRecibos(async (antes,secuencia) => {
+     rEstado.textContent = 'Consultando credenciales…';
+     const data = await apiRecibos('recibos_ver',{cuil:antes.cuil});
+     if (rIdentidad !== antes.identidad || rConsulta !== secuencia) return;
+     if (!data.existe) { rUsuario.value=''; rClave.value='';
+       rEstado.textContent='Este cliente todavía no tiene credenciales guardadas.'; return; }
+     if (data.sector !== antes.sector) {
+       rUsuario.value=''; rClave.value='';
+       rEstado.textContent='La repartición guardada no coincide con la ficha. Revisá antes de continuar.';
+       return;
+     }
+     rUsuario.value = data.usuario;
+     rClave.value = data.contrasena;
+     rEstado.textContent = 'Credenciales recuperadas de forma segura.';
+   }));
+   rGuardar.addEventListener('click', () => ejecutarRecibos(async (antes,secuencia) => {
+     const usuario = rUsuario.value.trim();
+     const contrasena = rClave.value;
+     if (!usuario || !contrasena) throw new Error('Completá usuario y contraseña.');
+     if (!confirm('¿Guardar las credenciales para el CUIL ' + antes.cuil + ' (' + antes.sector + ')?')) return;
+     rEstado.textContent = 'Guardando credenciales…';
+     await apiRecibos('recibos_guardar',{cuil:antes.cuil,sector:antes.sector,usuario,contrasena});
+     if (rIdentidad === antes.identidad && rConsulta === secuencia)
+       rEstado.textContent = 'Usuario y contraseña guardados correctamente.';
+   }));
+   rAbrir.addEventListener('click', () => {
+     const {cuil,sector} = refrescarRecibos();
+     if (!cuil || !sector) return;
+     window.open(portalesRecibos[sector], '_blank', 'noopener,noreferrer');
+   });
+   rMostrar.addEventListener('click', () => {
+     rClave.type = rClave.type === 'password' ? 'text' : 'password';
+     rMostrar.textContent = rClave.type === 'password' ? '👁️ Ver' : '🙈 Ocultar';
+   });
+   rCopiar.addEventListener('click', async () => {
+     if (!rClave.value || !refrescarRecibos().cuil) return;
+     try { await navigator.clipboard.writeText(rClave.value); rEstado.textContent='Contraseña copiada.'; }
+     catch (_) { rEstado.textContent='No se pudo copiar. Usá el botón Ver y copiala manualmente.'; }
+   });
 
   console.info('[SI] Legajo V3: enlace por correo y sesión protegida.');
 })();
