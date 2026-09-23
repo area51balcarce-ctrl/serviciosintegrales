@@ -153,7 +153,8 @@
       <div class="si-legajo-tile">
         <span class="si-legajo-icon">📝</span>
         <strong>Escrito Creditan</strong>
-        <span class="si-legajo-note">Generar y copiar · Próximamente</span>
+        <button type="button" class="si-legajo-chip" id="siEscritoAbrir">Generar escrito</button>
+        <span class="si-legajo-note">Usa la oferta real y la selección del asistente</span>
       </div>
     </div>
     <div class="si-legajo-recibos">
@@ -426,6 +427,112 @@
     }));
     // Las acciones se muestran desde habilitar() cuando hay sesión válida.
   }
+
+  // ESCRITO CREDITAN — módulo aislado. Lee el estado público del asistente,
+  // sin modificar el simulador, los saldos ni el almacenamiento del Legajo.
+  const escritoPanel = document.createElement('section');
+  escritoPanel.id = 'siEscritoPanel';
+  escritoPanel.hidden = true;
+  escritoPanel.style.cssText = 'margin-top:12px;padding:14px;border:1px solid #b7dbc6;border-radius:12px;background:#fbfefc';
+  escritoPanel.innerHTML = `
+    <h4 style="margin:0 0 8px;color:#0d633b">📝 Escrito Creditan</h4>
+    <p style="font-size:12px;color:#617069;margin:0 0 10px">Primero completá el asistente y presioná MOSTRAR OFERTA. Después generá el escrito.</p>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:9px">
+      <label style="font-size:12px">N.º de solicitud<br><input id="siEscritoSolicitud" type="text" inputmode="numeric" autocomplete="off" style="width:100%;box-sizing:border-box;padding:8px;border:1px solid #b7dbc6;border-radius:7px"></label>
+      <label style="font-size:12px">Enlace de firma digital<br><input id="siEscritoLink" type="url" autocomplete="off" placeholder="https://..." style="width:100%;box-sizing:border-box;padding:8px;border:1px solid #b7dbc6;border-radius:7px"></label>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin:12px 0">
+      <button type="button" class="si-legajo-chip" id="siEscritoGenerar">Actualizar vista previa</button>
+      <button type="button" class="si-legajo-chip" id="siEscritoCopiar" disabled>Copiar escrito</button>
+    </div>
+    <p id="siEscritoEstado" role="status" style="font-size:12px;color:#617069"></p>
+    <textarea id="siEscritoTexto" readonly spellcheck="false" aria-label="Vista previa del escrito" style="width:100%;min-height:340px;box-sizing:border-box;padding:10px;border:1px solid #dbe9e1;border-radius:8px;resize:vertical;font:13px/1.55 monospace"></textarea>
+  `;
+  bloque.appendChild(escritoPanel);
+  const abrirEscrito = bloque.querySelector('#siEscritoAbrir');
+  const solicitudEscrito = escritoPanel.querySelector('#siEscritoSolicitud');
+  const linkEscrito = escritoPanel.querySelector('#siEscritoLink');
+  const textoEscrito = escritoPanel.querySelector('#siEscritoTexto');
+  const estadoEscrito = escritoPanel.querySelector('#siEscritoEstado');
+  const copiarEscrito = escritoPanel.querySelector('#siEscritoCopiar');
+  let escritoCuil = null;
+  let escritoGenerado = '';
+  const pesosEscrito = n => Number(n).toLocaleString('es-AR', {minimumFractionDigits:2,maximumFractionDigits:2});
+
+  function construirEscrito() {
+    const cuil = cuilActual();
+    if (!cuil) throw new Error('Primero consultá un cliente con CUIL válido.');
+    const asistente = window.ServiciosIntegralesRenovacion;
+    if (typeof asistente?.getEstado !== 'function') throw new Error('El asistente de renovación no está disponible.');
+    const e = asistente.getEstado();
+    const plan = e?.planCreditan;
+    if (!plan?.ok || plan.source !== 'CREDITAN_GRILLA_REAL')
+      throw new Error('Primero usá MOSTRAR OFERTA y esperá la respuesta real de Creditan para este importe y estas cuotas.');
+    if (!Number.isFinite(e.importeFirmar) || e.importeFirmar <= 0 || !Number.isInteger(e.cuotas) || e.cuotas <= 0 ||
+        Math.abs(Number(plan.capital)-e.importeFirmar) >= 0.02 || Number(plan.cuotas) !== e.cuotas ||
+        !(Number(plan.cuota)>0) || !(Number(plan.neto)>0) || !(Number(plan.enMano)>0))
+      throw new Error('La oferta real está incompleta o no coincide con el importe y las cuotas actuales. Volvé a consultar MOSTRAR OFERTA.');
+    const solicitud = solicitudEscrito.value.trim();
+    const link = linkEscrito.value.trim();
+    if (!/^\d+$/.test(solicitud)) throw new Error('Ingresá el número de solicitud de Creditan.');
+    if (!/^https:\/\/\S+$/i.test(link)) throw new Error('Pegá el enlace HTTPS de firma digital de Creditan.');
+    const creditos = Array.isArray(e.creditos) ? e.creditos : [];
+    if (creditos.length > 1) throw new Error('Hay varios créditos seleccionados. El modelo recibido muestra uno solo; verificá el caso antes de generar.');
+    const renovacion = creditos.length === 1;
+    if (renovacion && (!(Number(creditos[0].saldo)>0) || !creditos[0].operacion))
+      throw new Error('Falta el número de operación o el saldo del crédito que se cancela.');
+    if (!Number.isFinite(e.comision) || e.comision <= 0 || !Number.isFinite(e.enManoFinal) || e.enManoFinal <= 0)
+      throw new Error('No se pudo validar la comisión o el dinero en mano. Revisá los datos del asistente.');
+    // El neto y el en mano provienen del estado del asistente; la cuota de la grilla real.
+    const tipo = renovacion
+      ? `CANCELA CRÉDITO NÚMERO ${creditos[0].operacion} CON UN SALDO DE $${pesosEscrito(creditos[0].saldo)} Y 5% $${pesosEscrito(e.cincoPorCiento)}`
+      : 'Sin renovacion';
+    return `Hola buenos dias.\n\nRemito para depositarle.\n\nFIRMA: DIGITAL COMPLETADA\n\nPlan seleccionado: ${renovacion ? 'RENOVACION' : 'PARALELO'}\n\nN° SOLICITUD: ${solicitud}\n\nCapital\n${pesosEscrito(e.importeFirmar)}\n\nNeto\n${pesosEscrito(e.netoBase)}\n\nEn mano\n${pesosEscrito(e.enManoFinal)}\n\nCuotas\n${e.cuotas}\n\nImporte\n${pesosEscrito(plan.cuota)}\n\nComisión:\n${pesosEscrito(e.comision)}\n\nTipo\n${tipo}\n\nLink firma digital:\n${link}\n\nMuchas gracias.`.replace(/\\n/g,'\n');
+  }
+
+  abrirEscrito.addEventListener('click', () => {
+    const actual = cuilActual();
+    if (escritoCuil !== actual) {
+      solicitudEscrito.value = '';
+      linkEscrito.value = '';
+      textoEscrito.value = '';
+      escritoGenerado = '';
+      copiarEscrito.disabled = true;
+      escritoCuil = actual;
+    }
+    escritoPanel.hidden = !escritoPanel.hidden;
+    if (!escritoPanel.hidden) escritoPanel.scrollIntoView({behavior:'smooth',block:'nearest'});
+  });
+  escritoPanel.querySelector('#siEscritoGenerar').addEventListener('click', () => {
+    escritoGenerado = '';
+    copiarEscrito.disabled = true;
+    textoEscrito.value = '';
+    try {
+      if (escritoCuil !== cuilActual()) throw new Error('Cambió el cliente. Volvé a abrir el generador.');
+      escritoGenerado = construirEscrito();
+      textoEscrito.value = escritoGenerado;
+      copiarEscrito.disabled = false;
+      estadoEscrito.textContent = 'Escrito preparado. Revisá los importes antes de enviarlo.';
+    } catch (error) { estadoEscrito.textContent = error.message; }
+  });
+  copiarEscrito.addEventListener('click', async () => {
+    if (!escritoGenerado || escritoCuil !== cuilActual()) {
+      estadoEscrito.textContent = 'El cliente cambió. Volvé a generar el escrito.';
+      copiarEscrito.disabled = true;
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(escritoGenerado);
+      estadoEscrito.textContent = 'Escrito copiado. Revisalo antes de enviar el correo.';
+    } catch (_) {
+      textoEscrito.focus(); textoEscrito.select();
+      estadoEscrito.textContent = 'No se pudo copiar automáticamente. Seleccioná el texto y presioná Ctrl+C.';
+    }
+  });
+  for (const input of [solicitudEscrito,linkEscrito]) input.addEventListener('input', () => {
+    escritoGenerado=''; copiarEscrito.disabled=true;
+    estadoEscrito.textContent='Actualizá la vista previa después de modificar los datos.';
+  });
 
   console.info('[SI] Legajo V3: enlace por correo y sesión protegida.');
 })();
