@@ -20,7 +20,7 @@
  * legajo.js hasta incorporar Supabase Auth real para los usuarios autorizados.
  */
 
-import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
+import { createCipheriv, createDecipheriv, randomBytes, randomUUID } from 'node:crypto';
 
 const BUCKET = 'legajos-clientes';
 const TABLA_RECIBOS = 'legajo_accesos_recibos';
@@ -136,6 +136,43 @@ export default async function handler(req, res) {
       // El cliente nunca recibe el texto cifrado, solamente los datos solicitados por un usuario autorizado.
       return responder(res,200,{existe:true,sector:registro.sector,usuario:registro.usuario,
         contrasena:descifrarRecibo(registro.contrasena_cifrada)});
+    }
+    // SELFIES: múltiples fotos por cliente, sin sobrescritura. Misma sesión protegida.
+    if (['selfies_preparar', 'selfies_listar', 'selfies_ver'].includes(accion)) {
+      if (!/^\d{11}$/.test(String(cuil || ''))) return responder(res, 400, {error:'CUIL inválido'});
+      const carpetaSelfies = `${cuil}/selfies`;
+      if (accion === 'selfies_preparar') {
+        if (!['jpg', 'jpeg', 'png'].includes(extension)) return responder(res, 400, {error:'Solo JPG o PNG'});
+        const nombreSelfie = `${new Date().toISOString().replace(/[:.]/g, '-')}_${randomUUID()}.${extension}`;
+        const ruta = `${carpetaSelfies}/${nombreSelfie}`;
+        const r = await supabaseFetch(`${base}/storage/v1/object/upload/sign/${BUCKET}/${ruta}`, serviceKey, {
+          method:'POST', headers:{'Content-Type':'application/json','x-upsert':'false'}, body:JSON.stringify({upsert:false})
+        });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok || !data.token) return responder(res, 502, {error:'No se pudo preparar la selfie'});
+        return responder(res, 200, {url:`${base}/storage/v1/object/upload/sign/${BUCKET}/${ruta}?token=${encodeURIComponent(data.token)}`,
+          metodo:'PUT',tipo:MIME[extension],nombre:nombreSelfie});
+      }
+      const r = await supabaseFetch(`${base}/storage/v1/object/list/${BUCKET}`,serviceKey,{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({prefix:carpetaSelfies,limit:1000,sortBy:{column:'name',order:'desc'}})
+      });
+      if (!r.ok) return responder(res,502,{error:'No se pudieron consultar las selfies'});
+      const objetos = await r.json().catch(() => []);
+      const fotos = (Array.isArray(objetos)?objetos:[])
+        .filter(x => /^[0-9TZ-]+_[0-9a-f-]{36}\.(jpg|jpeg|png)$/i.test(x.name))
+        .map(x => ({nombre:x.name,fecha:x.created_at || x.updated_at || null}));
+      if (accion === 'selfies_listar') return responder(res,200,{fotos,limite:1000});
+      const nombreSelfie = String(req.body.nombre || '');
+      if (!fotos.some(x => x.nombre === nombreSelfie)) return responder(res,404,{error:'Selfie no encontrada'});
+      const ruta = `${carpetaSelfies}/${nombreSelfie}`;
+      const firma = await supabaseFetch(`${base}/storage/v1/object/sign/${BUCKET}/${ruta}`,serviceKey,{
+        method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({expiresIn:60})
+      });
+      const data = await firma.json().catch(() => ({}));
+      if (!firma.ok || !data.signedURL) return responder(res,502,{error:'No se pudo abrir la selfie'});
+      return responder(res,200,{url:data.signedURL.startsWith('http')?data.signedURL:
+        `${base}/storage/v1${data.signedURL.startsWith('/')?'':'/'}${data.signedURL}`,venceEnSegundos:60});
     }
     if (!/^\d{11}$/.test(String(cuil || '')) || !['frente', 'dorso', 'servicio', 'cbu'].includes(lado)) {
       return responder(res, 400, { error: 'CUIL o tipo de documento inválido' });
