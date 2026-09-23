@@ -20,7 +20,30 @@
  * legajo.js hasta incorporar Supabase Auth real para los usuarios autorizados.
  */
 
+import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
+
 const BUCKET = 'legajos-clientes';
+const TABLA_RECIBOS = 'legajo_accesos_recibos';
+function claveRecibos() {
+  const key = Buffer.from(process.env.LEGAJO_RECIBOS_KEY || '', 'base64');
+  if (key.length !== 32) throw new Error('Clave de cifrado de recibos no configurada');
+  return key;
+}
+function cifrarRecibo(valor) {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv('aes-256-gcm', claveRecibos(), iv);
+  const data = Buffer.concat([cipher.update(valor, 'utf8'), cipher.final()]);
+  return [iv, cipher.getAuthTag(), data].map(x => x.toString('base64')).join('.');
+}
+function descifrarRecibo(valor) {
+  const [iv, tag, data] = String(valor).split('.').map(x => Buffer.from(x || '', 'base64'));
+  if (iv.length !== 12 || tag.length !== 16) throw new Error('Credencial cifrada inválida');
+  const decipher = createDecipheriv('aes-256-gcm', claveRecibos(), iv);
+  decipher.setAuthTag(tag);
+  return Buffer.concat([decipher.update(data), decipher.final()]).toString('utf8');
+}
+const sectoresRecibos = ['hospital', 'municipio'];
+
 const MIME = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', pdf: 'application/pdf' };
 
 function errorStorage(data) {
@@ -80,6 +103,40 @@ export default async function handler(req, res) {
     }
 
     const { accion, cuil, lado, extension } = req.body || {};
+    if (['recibos_ver', 'recibos_guardar'].includes(accion)) {
+      if (!/^\d{11}$/.test(String(cuil || ''))) return responder(res, 400, {error:'CUIL inválido'});
+      if (!process.env.LEGAJO_RECIBOS_KEY) return responder(res, 503, {error:'Falta configurar el cifrado de recibos'});
+      const endpoint = `${base}/rest/v1/${TABLA_RECIBOS}`;
+      if (accion === 'recibos_guardar') {
+        const sector = String(req.body.sector || '').toLowerCase();
+        const usuarioRecibo = String(req.body.usuario || '').trim();
+        const claveRecibo = String(req.body.contrasena || '');
+        if (!sectoresRecibos.includes(sector) || !usuarioRecibo || usuarioRecibo.length > 120 ||
+            !claveRecibo || claveRecibo.length > 256) {
+          return responder(res, 400, {error:'Revisá el sector, usuario y contraseña'});
+        }
+        const r = await supabaseFetch(endpoint + '?on_conflict=cuil', serviceKey, {
+          method:'POST',
+          headers:{'Content-Type':'application/json', Prefer:'resolution=merge-duplicates,return=minimal'},
+          body:JSON.stringify({cuil:String(cuil), sector, usuario:usuarioRecibo,
+            contrasena_cifrada:cifrarRecibo(claveRecibo), actualizado_en:new Date().toISOString()})
+        });
+        if (!r.ok) {
+          console.error('[LEGAJO] Error al guardar acceso a recibos',r.status);
+          return responder(res,502,{error:'No se pudieron guardar las credenciales'});
+        }
+        return responder(res,200,{ok:true});
+      }
+      const r = await supabaseFetch(endpoint + '?cuil=eq.' + encodeURIComponent(cuil) +
+        '&select=sector,usuario,contrasena_cifrada&limit=1', serviceKey);
+      if (!r.ok) return responder(res,502,{error:'No se pudo consultar el acceso a recibos'});
+      const registros = await r.json();
+      if (!registros?.length) return responder(res,200,{existe:false});
+      const registro = registros[0];
+      // El cliente nunca recibe el texto cifrado, solamente los datos solicitados por un usuario autorizado.
+      return responder(res,200,{existe:true,sector:registro.sector,usuario:registro.usuario,
+        contrasena:descifrarRecibo(registro.contrasena_cifrada)});
+    }
     if (!/^\d{11}$/.test(String(cuil || '')) || !['frente', 'dorso', 'servicio', 'cbu'].includes(lado)) {
       return responder(res, 400, { error: 'CUIL o tipo de documento inválido' });
     }
