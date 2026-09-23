@@ -53,6 +53,9 @@
   let cuilActual = "";
   let cuotaCreditan = null;
   let planCreditan = null;
+  let modoSimulacion = "capital";
+  let cuotaDeseada = 0;
+  let ofertasAbiertas = false;
   let simulacionError = "";
   let simulandoCreditan = false;
   let timerSimulacion = null;
@@ -998,7 +1001,9 @@
         completar Cuotas, esperar el refresco de GeneXus
         y devolver la cuota real.
       */
-      await ejecutarSimulacionCreditan();
+      ofertasAbiertas = true;
+      if (modoSimulacion === "cuota") await ejecutarSimulacionInversa();
+      else await ejecutarSimulacionCreditan();
 
       if (estado) {
         estado.textContent =
@@ -1134,6 +1139,87 @@
         }
       }, "*");
     });
+  }
+
+  // Búsqueda inversa: todas las cuotas se verifican contra la grilla REAL.
+  // Nunca se publica un capital estimado sin confirmación de Creditan.
+  async function ejecutarSimulacionInversa() {
+    const cuotas = Number($("#siRenovacionCuotas")?.value || 0);
+    const objetivo = numeroInput($("#siRenovacionCuotaDeseada")?.value);
+    if (!Number.isInteger(cuotas) || cuotas <= 0 || objetivo <= 0) {
+      simulacionError = "Ingresá cantidad de cuotas y valor de cuota deseado.";
+      renderCalculos();
+      return;
+    }
+    const miSecuencia = ++secuenciaSimulacion;
+    clearTimeout(timerSimulacion);
+    planCreditan = null;
+    cuotaCreditan = null;
+    simulacionError = "";
+    simulandoCreditan = true;
+    renderCalculos();
+    const estadoOferta = $("#siRenovacionMostrarOfertaEstado");
+    const consultar = async (capital) => {
+      const importe = Math.max(1, Math.round(capital));
+      const r = await consultarPlanCreditan(importe, cuotas, 28000);
+      if (miSecuencia !== secuenciaSimulacion) throw new Error("CONSULTA_CANCELADA");
+      if (!r?.ok || Math.abs(Number(r.capital) - importe) >= .02 || Number(r.cuotas) !== cuotas || Number(r.cuota) <= 0) {
+        throw new Error(r?.message || "Creditan no devolvió una oferta verificable para ese importe.");
+      }
+      return r;
+    };
+    try {
+      // Primer importe de referencia: el último capital ingresado o $1.000.000.
+      const referencia = numeroInput($("#siRenovacionImporteFirmar")?.value) || 1000000;
+      let actual = await consultar(referencia);
+      let mejor = actual.cuota <= objetivo + .005 ? actual : null;
+      let inferior = actual.cuota <= objetivo ? Number(actual.capital) : 0;
+      let superior = actual.cuota > objetivo ? Number(actual.capital) : 0;
+      if (estadoOferta) estadoOferta.textContent = "Buscando capital con cuotas reales de Creditan...";
+      // Acercamiento proporcional: sólo sirve para proponer un nuevo capital.
+      // El resultado final siempre se verifica con una consulta real.
+      let candidato = Math.round(Number(actual.capital) * objetivo / Number(actual.cuota));
+      if (Math.abs(candidato - Number(actual.capital)) < 1) candidato += actual.cuota <= objetivo ? 1 : -1;
+      if (candidato > 0 && candidato !== Number(actual.capital)) {
+        actual = await consultar(candidato);
+        if (actual.cuota <= objetivo + .005 && (!mejor || actual.capital > mejor.capital)) mejor = actual;
+        if (actual.cuota <= objetivo) inferior = Math.max(inferior, Number(actual.capital));
+        else superior = superior ? Math.min(superior, Number(actual.capital)) : Number(actual.capital);
+      }
+      // Ajuste con un máximo de 6 consultas adicionales; sin extrapolar resultados.
+      for (let i = 0; i < 6 && miSecuencia === secuenciaSimulacion; i++) {
+        if (mejor && Math.abs(mejor.cuota - objetivo) <= .01) break;
+        let siguiente;
+        if (inferior > 0 && superior > inferior + 1) siguiente = Math.round((inferior + superior) / 2);
+        else if (!inferior && superior > 1) siguiente = Math.round(superior / 2);
+        else if (inferior > 0 && !superior) siguiente = Math.round(inferior * 1.08);
+        else break;
+        if (siguiente <= 0 || siguiente === Number(actual.capital)) break;
+        actual = await consultar(siguiente);
+        if (actual.cuota <= objetivo + .005 && (!mejor || actual.capital > mejor.capital)) mejor = actual;
+        if (actual.cuota <= objetivo) inferior = Math.max(inferior, Number(actual.capital));
+        else superior = superior ? Math.min(superior, Number(actual.capital)) : Number(actual.capital);
+      }
+      if (miSecuencia !== secuenciaSimulacion) return;
+      if (!mejor) throw new Error("No se encontró una oferta real que no supere la cuota indicada.");
+      $("#siRenovacionImporteFirmar").value = new Intl.NumberFormat("es-AR", {maximumFractionDigits: 0}).format(mejor.capital);
+      planCreditan = mejor;
+      cuotaCreditan = Number(mejor.cuota);
+      cuotaDeseada = objetivo;
+      simulacionError = "";
+      if (estadoOferta) estadoOferta.textContent = "Oferta real encontrada. Verificá el capital y la cuota antes de continuar.";
+    } catch (error) {
+      if (miSecuencia !== secuenciaSimulacion) return;
+      planCreditan = null;
+      cuotaCreditan = null;
+      simulacionError = error?.message || "No se pudo consultar Creditan.";
+      if (estadoOferta) estadoOferta.textContent = simulacionError;
+    } finally {
+      if (miSecuencia === secuenciaSimulacion) {
+        simulandoCreditan = false;
+        renderCalculos();
+      }
+    }
   }
 
   async function ejecutarSimulacionCreditan() {
@@ -1774,8 +1860,14 @@
           >
         </label>
 
+        <label class="si-renovacion-field">
+          <span>Valor de cuota deseado (editable)</span>
+          <input id="siRenovacionCuotaDeseada" type="text" inputmode="decimal"
+                 autocomplete="off" placeholder="Ej.: 213.546,50">
+        </label>
+
         <div class="si-renovacion-box">
-          <span>Importe de cuota</span>
+          <span>Importe de cuota real</span>
 
           <strong id="siRenovacionCuotaCreditan">
             Pendiente Creditan
@@ -1919,6 +2011,10 @@
           queda invalidada al cambiar el importe.
         */
 
+        modoSimulacion = "capital";
+        const cuotaInput = $("#siRenovacionCuotaDeseada");
+        if (cuotaInput) cuotaInput.value = "";
+        cuotaDeseada = 0;
         secuenciaSimulacion++;
 
         clearTimeout(
@@ -1931,6 +2027,9 @@
         simulandoCreditan = false;
 
         renderCalculos();
+        if (ofertasAbiertas && numeroInput(inputFirmar.value) > 0 && Number(inputCuotas?.value) > 0) {
+          timerSimulacion = setTimeout(ejecutarSimulacionCreditan, 1000);
+        }
       }
     );
 
@@ -1955,6 +2054,12 @@
         simulandoCreditan = false;
 
         renderCalculos();
+        if (ofertasAbiertas && Number(inputCuotas.value) > 0) {
+          timerSimulacion = setTimeout(
+            modoSimulacion === "cuota" ? ejecutarSimulacionInversa : ejecutarSimulacionCreditan,
+            1000
+          );
+        }
       }
     );
 
@@ -1964,6 +2069,30 @@
 
       NO hacemos ninguna consulta a Creditan acá.
     */
+
+    const inputCuotaDeseada = $("#siRenovacionCuotaDeseada");
+    inputCuotaDeseada?.addEventListener("input", () => {
+      modoSimulacion = "cuota";
+      cuotaDeseada = numeroInput(inputCuotaDeseada.value);
+      secuenciaSimulacion++;
+      clearTimeout(timerSimulacion);
+      planCreditan = null;
+      cuotaCreditan = null;
+      simulacionError = "";
+      simulandoCreditan = false;
+      // No conservar un capital anterior como si fuera el resultado inverso.
+      if (inputFirmar) inputFirmar.value = "";
+      renderCalculos();
+      if (ofertasAbiertas && cuotaDeseada > 0 && Number(inputCuotas?.value) > 0) {
+        timerSimulacion = setTimeout(ejecutarSimulacionInversa, 1000);
+      }
+    });
+    inputCuotaDeseada?.addEventListener("blur", () => {
+      const n = numeroInput(inputCuotaDeseada.value);
+      if (n > 0) inputCuotaDeseada.value = new Intl.NumberFormat("es-AR", {
+        minimumFractionDigits: 2, maximumFractionDigits: 2
+      }).format(n);
+    });
 
     inputFirmar?.addEventListener(
       "blur",
@@ -2023,6 +2152,9 @@
     */
 
     seleccionadas.clear();
+    modoSimulacion = "capital";
+    cuotaDeseada = 0;
+    ofertasAbiertas = false;
     saldosManuales.clear();
 
     cuotaCreditan = null;
@@ -2053,6 +2185,8 @@
     if (inputCuotas) {
       inputCuotas.value = "";
     }
+    const inputCuotaDeseada = $("#siRenovacionCuotaDeseada");
+    if (inputCuotaDeseada) inputCuotaDeseada.value = "";
 
     /*
       También restauramos solamente
