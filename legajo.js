@@ -1,6 +1,6 @@
 
-/* SERVICIOS INTEGRALES — LEGAJO VISUAL V1
-   Interfaz de selección local de DNI. No envía ni almacena documentos todavía.
+/* SERVICIOS INTEGRALES — LEGAJO V3 — ENLACE DE CORREO Y API
+   Selección local de DNI y carga mediante sesión de Supabase Auth.
    Conserva los datos históricos de Supabase y no altera otros módulos.
 */
 (() => {
@@ -195,7 +195,7 @@
     observer.observe(ficha, { childList:true });
   }
 
-  // LEGAJO V2: acceso independiente por código de correo y conexión a la API.
+  // LEGAJO V3: acceso independiente mediante enlace por correo y conexión a la API.
   // No modifica el selector interno ni los demás módulos.
   const cuilSeleccion = {frente:null, dorso:null};
   const tileDni = bloque.querySelector('.si-legajo-tile');
@@ -206,12 +206,7 @@
       <strong>Acceso protegido a documentos</strong>
       <p id="siLegajoAuthEstado" style="margin:7px 0;color:#617069">Preparando acceso…</p>
       <div id="siLegajoAuthInicio" hidden>
-        <button type="button" id="siLegajoEnviarCodigo" class="si-legajo-chip">Enviar código a mi correo</button>
-      </div>
-      <div id="siLegajoAuthCodigo" hidden style="margin-top:8px">
-        <label for="siLegajoCodigo">Código recibido por correo</label><br>
-        <input id="siLegajoCodigo" inputmode="numeric" autocomplete="one-time-code" maxlength="8" placeholder="Código" style="max-width:150px;padding:7px;margin:5px 0;border:1px solid #b7dbc6;border-radius:8px">
-        <button type="button" id="siLegajoVerificar" class="si-legajo-chip">Verificar</button>
+        <button type="button" id="siLegajoEnviarCodigo" class="si-legajo-chip">Enviar enlace a mi correo</button>
       </div>
       <button type="button" id="siLegajoSalir" class="si-legajo-chip" hidden style="margin-top:6px">Cerrar acceso a documentos</button>
     </div>
@@ -227,13 +222,10 @@
 
   const authEstado = extra.querySelector('#siLegajoAuthEstado');
   const inicio = extra.querySelector('#siLegajoAuthInicio');
-  const codigoBox = extra.querySelector('#siLegajoAuthCodigo');
   const acciones = extra.querySelector('#siLegajoAcciones');
   const operacion = extra.querySelector('#siLegajoOperacion');
   const btnEnviar = extra.querySelector('#siLegajoEnviarCodigo');
-  const btnVerificar = extra.querySelector('#siLegajoVerificar');
   const btnSalir = extra.querySelector('#siLegajoSalir');
-  const inputCodigo = extra.querySelector('#siLegajoCodigo');
   let authClient = null;
   let correo = '';
   let ocupado = false;
@@ -254,18 +246,17 @@
     const autorizado = Boolean(sesion?.access_token && sesion?.user?.email &&
       sesion.user.email.toLowerCase() === correo.toLowerCase());
     inicio.hidden = autorizado;
-    codigoBox.hidden = autorizado || codigoBox.dataset.enviado !== '1';
     btnSalir.hidden = !autorizado;
     acciones.hidden = !autorizado;
     acciones.style.display = autorizado ? 'flex' : 'none';
     authEstado.textContent = autorizado
       ? 'Sesión protegida activa: ' + correo
-      : 'Para guardar y consultar DNI, solicitá un código a ' + correo + '.';
+      : 'Para guardar y consultar DNI, solicitá un enlace a ' + correo + '.';
   }
   async function sesionActual() {
     if (!authClient) throw new Error('La conexión de documentos todavía no está disponible.');
     const { data, error } = await authClient.auth.getSession();
-    if (error || !data.session) throw new Error('Primero verificá el código enviado a tu correo.');
+    if (error || !data.session) throw new Error('Primero abrí el enlace enviado a tu correo.');
     if (data.session.user.email?.toLowerCase() !== correo.toLowerCase()) {
       await authClient.auth.signOut();
       habilitar(null);
@@ -298,27 +289,23 @@
     }
   }
   btnEnviar.addEventListener('click', () => ejecutar(async () => {
-    authEstado.textContent = 'Enviando código…';
-    const { error } = await authClient.auth.signInWithOtp({
-      email: correo, options: { shouldCreateUser: false }
+    if (!authClient || !correo) throw new Error('Todavía no está listo el acceso al Legajo.');
+    authEstado.textContent = 'Enviando enlace…';
+    const {error} = await authClient.auth.signInWithOtp({
+      email: correo,
+      options: {
+        shouldCreateUser: false,
+        emailRedirectTo: location.origin + '/'
+      }
     });
     if (error) throw error;
-    codigoBox.dataset.enviado = '1';
-    codigoBox.hidden = false;
-    authEstado.textContent = 'Revisá tu correo e ingresá el código recibido.';
-  }));
-  btnVerificar.addEventListener('click', () => ejecutar(async () => {
-    const token = inputCodigo.value.trim();
-    if (!/^\d{6,8}$/.test(token)) throw new Error('Ingresá el código numérico recibido.');
-    const {data,error} = await authClient.auth.verifyOtp({email:correo,token,type:'email'});
-    if (error) throw error;
-    habilitar(data.session);
-    mensaje('Acceso a documentos habilitado.');
+    authEstado.textContent = 'Te enviamos un enlace a ' + correo + '. Abrilo desde este navegador para activar el Legajo.';
+    mensaje('Revisá también la carpeta de correo no deseado. El enlace es de un solo uso.');
   }));
   btnSalir.addEventListener('click', () => ejecutar(async () => {
-    await authClient.auth.signOut();
-    codigoBox.dataset.enviado = '0';
-    inputCodigo.value = '';
+    if (!authClient) return;
+    const {error} = await authClient.auth.signOut();
+    if (error) throw error;
     habilitar(null);
     mensaje('Acceso a documentos cerrado.');
   }));
@@ -355,8 +342,9 @@
       const {createClient} = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
       authClient = createClient('https://smxcqnahlklkqrxbbrjh.supabase.co',
         'sb_publishable_am_ucuk2jAJPZRz-aaVJvA_72Z1h2du',
-        {auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:false,storageKey:'si_legajo_auth_v1'}});
-      const {data} = await authClient.auth.getSession();
+        {auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true,flowType:'implicit',storageKey:'si_legajo_auth_v1'}});
+      const {data,error} = await authClient.auth.getSession();
+      if (error) throw error;
       habilitar(data.session);
       authClient.auth.onAuthStateChange((_event,session) => habilitar(session));
     } catch(e) {
@@ -365,5 +353,5 @@
     }
   })();
 
-  console.info('[SI] Legajo V2: carga y consulta con sesión protegida.');
+  console.info('[SI] Legajo V3: enlace por correo y sesión protegida.');
 })();
