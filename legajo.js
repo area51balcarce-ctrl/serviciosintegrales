@@ -131,12 +131,24 @@
       <div class="si-legajo-tile">
         <span class="si-legajo-icon">📄</span>
         <strong>Servicio</strong>
-        <span class="si-legajo-note">PDF o imagen</span>
+        <button type="button" class="si-legajo-chip" data-elegir-extra="servicio">Seleccionar archivo</button>
+        <input type="file" data-archivo-extra="servicio" accept="application/pdf,image/jpeg" hidden>
+        <span class="si-legajo-note" data-estado-extra="servicio">PDF o JPG · Máximo 10 MB</span>
+        <div class="si-legajo-dni" data-acciones-extra="servicio" style="display:none">
+          <button type="button" class="si-legajo-chip" data-guardar-extra="servicio">Guardar Servicio</button>
+          <button type="button" class="si-legajo-chip" data-ver-extra="servicio">Ver Servicio</button>
+        </div>
       </div>
       <div class="si-legajo-tile">
         <span class="si-legajo-icon">🏦</span>
         <strong>CBU</strong>
-        <span class="si-legajo-note">PDF o imagen</span>
+        <button type="button" class="si-legajo-chip" data-elegir-extra="cbu">Seleccionar archivo</button>
+        <input type="file" data-archivo-extra="cbu" accept="application/pdf,image/jpeg" hidden>
+        <span class="si-legajo-note" data-estado-extra="cbu">PDF o JPG · Máximo 10 MB</span>
+        <div class="si-legajo-dni" data-acciones-extra="cbu" style="display:none">
+          <button type="button" class="si-legajo-chip" data-guardar-extra="cbu">Guardar CBU</button>
+          <button type="button" class="si-legajo-chip" data-ver-extra="cbu">Ver CBU</button>
+        </div>
       </div>
       <div class="si-legajo-tile">
         <span class="si-legajo-icon">📝</span>
@@ -237,7 +249,7 @@
     return /^\d{11}$/.test(digitos) ? digitos : null;
   }
   function mensaje(t) { operacion.textContent = t; }
-  bloque.querySelectorAll('input[type=file]').forEach(input => {
+  bloque.querySelectorAll('#siDniFrente, #siDniDorso').forEach(input => {
     input.addEventListener('change', () => {
       const lado = input.id === 'siDniFrente' ? 'frente' : 'dorso';
       cuilSeleccion[lado] = input.files?.length ? cuilActual() : null;
@@ -253,6 +265,7 @@
     inicio.hidden = autorizado;
     acciones.hidden = !autorizado;
     acciones.style.display = autorizado ? 'flex' : 'none';
+    bloque.querySelectorAll('[data-acciones-extra]').forEach(panel => { panel.style.display = autorizado ? 'flex' : 'none'; });
     authEstado.textContent = autorizado
       ? 'Sesión protegida activa: ' + correo
       : 'Para guardar y consultar DNI, solicitá un enlace a ' + correo + '.';
@@ -356,6 +369,63 @@
       inicio.hidden = true;
     }
   })();
+
+  // Servicio y CBU: un único archivo de cada tipo, con la misma sesión protegida del DNI.
+  // No se guardan archivos seleccionados al cambiar de cliente.
+  const extras = { servicio: {archivo:null,cuil:null}, cbu: {archivo:null,cuil:null} };
+  for (const tipo of ['servicio', 'cbu']) {
+    const entrada = bloque.querySelector(`[data-archivo-extra="${tipo}"]`);
+    const elegir = bloque.querySelector(`[data-elegir-extra="${tipo}"]`);
+    const etiqueta = bloque.querySelector(`[data-estado-extra="${tipo}"]`);
+    const panel = bloque.querySelector(`[data-acciones-extra="${tipo}"]`);
+    const guardar = bloque.querySelector(`[data-guardar-extra="${tipo}"]`);
+    const ver = bloque.querySelector(`[data-ver-extra="${tipo}"]`);
+    const nombre = tipo === 'cbu' ? 'CBU' : 'Servicio';
+    elegir.addEventListener('click', () => entrada.click());
+    entrada.addEventListener('change', () => {
+      const file = entrada.files?.[0];
+      if (!file) return;
+      if (!['application/pdf','image/jpeg'].includes(file.type) || file.size > 10*1024*1024) {
+        entrada.value = '';
+        extras[tipo] = {archivo:null,cuil:null};
+        etiqueta.textContent = 'Solo PDF o JPG, máximo 10 MB.';
+        return;
+      }
+      const cuil = cuilActual();
+      if (!cuil) {
+        entrada.value = '';
+        etiqueta.textContent = 'Consultá primero un cliente con CUIL válido.';
+        return;
+      }
+      extras[tipo] = {archivo:file,cuil};
+      elegir.textContent = 'Archivo: ' + file.name;
+      etiqueta.textContent = 'Seleccionado localmente. Aún no se guardó.';
+    });
+    guardar.addEventListener('click', () => ejecutar(async () => {
+      const item = extras[tipo];
+      if (!item.archivo) throw new Error('Primero seleccioná el archivo de ' + nombre + '.');
+      if (!item.cuil || item.cuil !== cuilActual())
+        throw new Error('Cambió el cliente. Volvé a seleccionar el archivo para evitar guardarlo en otro legajo.');
+      const extension = item.archivo.type === 'application/pdf' ? 'pdf' : 'jpg';
+      etiqueta.textContent = 'Guardando ' + nombre + '…';
+      const {url,metodo,tipo:contentType} = await llamarApi('preparar_subida',tipo,extension);
+      const respuesta = await fetch(url, {
+        method:metodo || 'PUT', headers:{'Content-Type':contentType || item.archivo.type},body:item.archivo
+      });
+      if (!respuesta.ok) throw new Error('No se pudo guardar ' + nombre + ' (' + respuesta.status + ').');
+      etiqueta.textContent = nombre + ' guardado correctamente en Supabase.';
+      mensaje(nombre + ' guardado correctamente.');
+    }));
+    ver.addEventListener('click', () => ejecutar(async () => {
+      mensaje('Buscando ' + nombre + '…');
+      const {url} = await llamarApi('ver',tipo);
+      const link = document.createElement('a');
+      link.href=url; link.target='_blank'; link.rel='noopener noreferrer';
+      document.body.appendChild(link); link.click(); link.remove();
+      mensaje(nombre + ' abierto. El enlace vence en 60 segundos.');
+    }));
+    // Las acciones se muestran desde habilitar() cuando hay sesión válida.
+  }
 
   console.info('[SI] Legajo V3: enlace por correo y sesión protegida.');
 })();
