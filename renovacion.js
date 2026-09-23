@@ -1047,7 +1047,9 @@
   function consultarPlanCreditan(
     capital,
     cuotas,
-    timeout = 22000
+    timeout = 30000,
+    modo = "capital",
+    cuotaObjetivo = 0
   ) {
     return new Promise((resolve) => {
       const requestId =
@@ -1135,14 +1137,15 @@
 
         payload: {
           capital,
-          cuotas
+          cuotas,
+          modo,
+          cuota: cuotaObjetivo
         }
       }, "*");
     });
   }
 
-  // Búsqueda inversa: todas las cuotas se verifican contra la grilla REAL.
-  // Nunca se publica un capital estimado sin confirmación de Creditan.
+  // Consulta directa al filtro REAL Monto cuota $ de Creditan.
   async function ejecutarSimulacionInversa() {
     const cuotas = Number($("#siRenovacionCuotas")?.value || 0);
     const objetivo = numeroInput($("#siRenovacionCuotaDeseada")?.value);
@@ -1159,65 +1162,24 @@
     simulandoCreditan = true;
     renderCalculos();
     const estadoOferta = $("#siRenovacionMostrarOfertaEstado");
-    const consultar = async (capital) => {
-      const importe = Math.max(1, Math.round(capital));
-      const r = await consultarPlanCreditan(importe, cuotas, 28000);
-      if (miSecuencia !== secuenciaSimulacion) throw new Error("CONSULTA_CANCELADA");
-      if (!r?.ok || Math.abs(Number(r.capital) - importe) >= .02 || Number(r.cuotas) !== cuotas || Number(r.cuota) <= 0) {
-        throw new Error(r?.message || "Creditan no devolvió una oferta verificable para ese importe.");
-      }
-      return r;
-    };
+    if (estadoOferta) estadoOferta.textContent = "Consultando Monto cuota $ y Cuotas en Creditan...";
     try {
-      // Primer importe de referencia: el último capital ingresado o $1.000.000.
-      const referencia = numeroInput($("#siRenovacionImporteFirmar")?.value) || 1000000;
-      let actual = await consultar(referencia);
-      let mejor = actual.cuota <= objetivo + .005 ? actual : null;
-      let inferior = actual.cuota <= objetivo ? Number(actual.capital) : 0;
-      let superior = actual.cuota > objetivo ? Number(actual.capital) : 0;
-      if (estadoOferta) estadoOferta.textContent = "Buscando capital con cuotas reales de Creditan...";
-      // Acercamiento proporcional: sólo sirve para proponer un nuevo capital.
-      // El resultado final siempre se verifica con una consulta real.
-      let candidato = Math.round(Number(actual.capital) * objetivo / Number(actual.cuota));
-      if (Math.abs(candidato - Number(actual.capital)) < 1) candidato += actual.cuota <= objetivo ? 1 : -1;
-      if (candidato > 0 && candidato !== Number(actual.capital)) {
-        actual = await consultar(candidato);
-        if (actual.cuota <= objetivo + .005 && (!mejor || actual.capital > mejor.capital)) mejor = actual;
-        if (actual.cuota <= objetivo) inferior = Math.max(inferior, Number(actual.capital));
-        else superior = superior ? Math.min(superior, Number(actual.capital)) : Number(actual.capital);
-      }
-      // Ajuste con un máximo de 6 consultas adicionales; sin extrapolar resultados.
-      for (let i = 0; i < 6 && miSecuencia === secuenciaSimulacion; i++) {
-        if (mejor && Math.abs(mejor.cuota - objetivo) <= .01) break;
-        let siguiente;
-        if (inferior > 0 && superior > inferior + 1) siguiente = Math.round((inferior + superior) / 2);
-        else if (!inferior && superior > 1) siguiente = Math.round(superior / 2);
-        else if (inferior > 0 && !superior) siguiente = Math.round(inferior * 1.08);
-        else break;
-        if (siguiente <= 0 || siguiente === Number(actual.capital)) break;
-        actual = await consultar(siguiente);
-        if (actual.cuota <= objetivo + .005 && (!mejor || actual.capital > mejor.capital)) mejor = actual;
-        if (actual.cuota <= objetivo) inferior = Math.max(inferior, Number(actual.capital));
-        else superior = superior ? Math.min(superior, Number(actual.capital)) : Number(actual.capital);
-      }
+      const resultado = await consultarPlanCreditan(0, cuotas, 36000, "cuota", objetivo);
       if (miSecuencia !== secuenciaSimulacion) return;
-      if (!mejor) throw new Error("No se encontró una oferta real que no supere la cuota indicada.");
-      // La búsqueda inversa prueba varios capitales. El último capital consultado
-      // puede NO ser el mejor: dejamos los filtros REALES de Creditan exactamente
-      // con el capital elegido y la cantidad de cuotas ingresada en SI.
-      if (estadoOferta) estadoOferta.textContent = "Cargando el importe definitivo y las cuotas en Creditan...";
-      const definitivo = await consultar(Number(mejor.capital));
-      if (miSecuencia !== secuenciaSimulacion) return;
-      if (Number(definitivo.cuota) > objetivo + .005) {
-        throw new Error("La cuota definitiva de Creditan supera la cuota deseada. Revisá la oferta.");
+      if (!resultado?.ok || resultado.source !== "CREDITAN_GRILLA_REAL" ||
+          Number(resultado.cuotas) !== cuotas || Number(resultado.capital) <= 0 ||
+          Number(resultado.cuota) <= 0 || Number(resultado.cuota) > objetivo + .01) {
+        throw new Error(resultado?.message || "Creditan no devolvió una oferta válida dentro de la cuota deseada.");
       }
-      mejor = definitivo;
-      $("#siRenovacionImporteFirmar").value = new Intl.NumberFormat("es-AR", {maximumFractionDigits: 0}).format(mejor.capital);
-      planCreditan = mejor;
-      cuotaCreditan = Number(mejor.cuota);
+      const inputFirmar = $("#siRenovacionImporteFirmar");
+      if (inputFirmar) inputFirmar.value = new Intl.NumberFormat("es-AR", {maximumFractionDigits:0}).format(resultado.capital);
+      planCreditan = resultado;
+      cuotaCreditan = Number(resultado.cuota);
       cuotaDeseada = objetivo;
       simulacionError = "";
-      if (estadoOferta) estadoOferta.textContent = "Importe y cuotas cargados en Creditan. La cuota real se muestra en la grilla de ofertas.";
+      if (estadoOferta) estadoOferta.textContent = "Oferta real recibida. Cuota solicitada: " +
+        new Intl.NumberFormat("es-AR", {style:"currency",currency:"ARS"}).format(objetivo) +
+        "; cuota real: " + new Intl.NumberFormat("es-AR", {style:"currency",currency:"ARS"}).format(resultado.cuota) + ".";
     } catch (error) {
       if (miSecuencia !== secuenciaSimulacion) return;
       planCreditan = null;
