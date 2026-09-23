@@ -1202,12 +1202,22 @@
       }
       if (miSecuencia !== secuenciaSimulacion) return;
       if (!mejor) throw new Error("No se encontró una oferta real que no supere la cuota indicada.");
+      // La búsqueda inversa prueba varios capitales. El último capital consultado
+      // puede NO ser el mejor: dejamos los filtros REALES de Creditan exactamente
+      // con el capital elegido y la cantidad de cuotas ingresada en SI.
+      if (estadoOferta) estadoOferta.textContent = "Cargando el importe definitivo y las cuotas en Creditan...";
+      const definitivo = await consultar(Number(mejor.capital));
+      if (miSecuencia !== secuenciaSimulacion) return;
+      if (Number(definitivo.cuota) > objetivo + .005) {
+        throw new Error("La cuota definitiva de Creditan supera la cuota deseada. Revisá la oferta.");
+      }
+      mejor = definitivo;
       $("#siRenovacionImporteFirmar").value = new Intl.NumberFormat("es-AR", {maximumFractionDigits: 0}).format(mejor.capital);
       planCreditan = mejor;
       cuotaCreditan = Number(mejor.cuota);
       cuotaDeseada = objetivo;
       simulacionError = "";
-      if (estadoOferta) estadoOferta.textContent = "Oferta real encontrada. Verificá el capital y la cuota antes de continuar.";
+      if (estadoOferta) estadoOferta.textContent = "Importe y cuotas cargados en Creditan. La cuota real se muestra en la grilla de ofertas.";
     } catch (error) {
       if (miSecuencia !== secuenciaSimulacion) return;
       planCreditan = null;
