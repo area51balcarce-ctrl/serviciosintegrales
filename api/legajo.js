@@ -23,6 +23,13 @@
 const BUCKET = 'legajos-clientes';
 const MIME = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', pdf: 'application/pdf' };
 
+function errorStorage(data) {
+  // No registrar tokens, URLs firmadas ni datos personales.
+  const codigo = typeof data?.error === 'string' ? data.error : data?.errorCode;
+  const mensaje = typeof data?.message === 'string' ? data.message : '';
+  return { codigo: String(codigo || 'sin_codigo').slice(0, 80), mensaje: String(mensaje || 'Sin detalle').slice(0, 250) };
+}
+
 function responder(res, codigo, datos) {
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -93,12 +100,13 @@ export default async function handler(req, res) {
       const r = await supabaseFetch(
         `${base}/storage/v1/object/upload/sign/${BUCKET}/${ruta}`,
         serviceKey,
-        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }
+        { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-upsert': 'true' }, body: JSON.stringify({ upsert: true }) }
       );
       const data = await r.json().catch(() => ({}));
       if (!r.ok || !data.token) {
-        console.error('[LEGAJO] No se pudo firmar la subida', r.status);
-        return responder(res, 502, { error: 'No se pudo preparar la subida' });
+        const detalle = errorStorage(data);
+        console.error('[LEGAJO] Falló firma de subida', { estado: r.status, ...detalle });
+        return responder(res, 502, { error: 'No se pudo preparar la subida', detalle: `${detalle.codigo}: ${detalle.mensaje}` });
       }
       // El navegador hace PUT al endpoint firmado, con Content-Type correspondiente.
       // El token de subida es temporal; no guardarlo en GitHub ni en localStorage.
@@ -112,7 +120,11 @@ export default async function handler(req, res) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ prefix: `${cuil}/dni`, limit: 100 })
     });
-    if (!listResp.ok) return responder(res, 502, { error: 'No se pudo consultar el Legajo' });
+    if (!listResp.ok) {
+      const detalle = errorStorage(await listResp.json().catch(() => ({})));
+      console.error('[LEGAJO] Falló listado', { estado: listResp.status, ...detalle });
+      return responder(res, 502, { error: 'No se pudo consultar el Legajo', detalle: `${detalle.codigo}: ${detalle.mensaje}` });
+    }
     const objetos = await listResp.json();
     const encontrados = (Array.isArray(objetos) ? objetos : [])
       .filter(x => opciones.some(ext => x.name === `${lado}.${ext}`));
@@ -128,9 +140,17 @@ export default async function handler(req, res) {
       body: JSON.stringify({ expiresIn: 60 })
     });
     const data = await r.json().catch(() => ({}));
-    if (!r.ok || !data.signedURL) return responder(res, 502, { error: 'No se pudo abrir el documento' });
+    if (!r.ok || !data.signedURL) {
+      const detalle = errorStorage(data);
+      console.error('[LEGAJO] Falló firma de lectura', { estado: r.status, ...detalle });
+      return responder(res, 502, { error: 'No se pudo abrir el documento', detalle: `${detalle.codigo}: ${detalle.mensaje}` });
+    }
+    // Supabase devuelve una ruta relativa a /storage/v1, no a la raíz del dominio.
+    const urlLectura = data.signedURL.startsWith('http')
+      ? data.signedURL
+      : `${base}/storage/v1${data.signedURL.startsWith('/') ? '' : '/'}${data.signedURL}`;
     return responder(res, 200, {
-      url: new URL(data.signedURL, base).href,
+      url: urlLectura,
       venceEnSegundos: 60
     });
   } catch (err) {
