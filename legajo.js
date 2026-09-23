@@ -638,16 +638,26 @@
     if (!/^\d+$/.test(solicitud)) throw new Error('Ingresá el número de solicitud de Creditan.');
     if (!/^https:\/\/\S+$/i.test(link)) throw new Error('Pegá el enlace HTTPS de firma digital de Creditan.');
     const creditos = Array.isArray(e.creditos) ? e.creditos : [];
-    if (creditos.length > 1) throw new Error('Hay varios créditos seleccionados. El modelo recibido muestra uno solo; verificá el caso antes de generar.');
-    const renovacion = creditos.length === 1;
-    if (renovacion && (!(Number(creditos[0].saldo)>0) || !creditos[0].operacion))
-      throw new Error('Falta el número de operación o el saldo del crédito que se cancela.');
+    if (creditos.length > 10)
+      throw new Error('El escrito admite hasta 10 créditos para cancelar. Revisá la selección.');
+    const renovacion = creditos.length > 0;
+    for (const [indice, credito] of creditos.entries()) {
+      if (!(Number(credito.saldo) > 0) || !String(credito.operacion ?? '').trim())
+        throw new Error(`Falta el número de operación o el saldo del crédito ${indice + 1} que se cancela.`);
+    }
+    if (renovacion && !(Number.isFinite(e.cincoPorCiento) && e.cincoPorCiento >= 0))
+      throw new Error('No se pudo validar el 5% de cancelación. Revisá los datos del asistente.');
     if (!Number.isFinite(e.comision) || e.comision <= 0 || !Number.isFinite(e.enManoFinal) || e.enManoFinal <= 0)
       throw new Error('No se pudo validar la comisión o el dinero en mano. Revisá los datos del asistente.');
-    // El neto y el en mano provienen del estado del asistente; la cuota de la grilla real.
-    const tipo = renovacion
+    // Los saldos individuales se leen del asistente; no se alteran sus cálculos.
+    // Con un crédito conservamos el formato histórico; con varios, los enumeramos.
+    const saldoTotal = creditos.reduce((total, credito) => total + Number(credito.saldo), 0);
+    const tipo = !renovacion ? 'Sin renovacion' : creditos.length === 1
       ? `CANCELA CRÉDITO NÚMERO ${creditos[0].operacion} CON UN SALDO DE $${pesosEscrito(creditos[0].saldo)} Y 5% $${pesosEscrito(e.cincoPorCiento)}`
-      : 'Sin renovacion';
+      : creditos.map((credito, indice) =>
+          `${indice + 1}. CANCELA CRÉDITO NÚMERO ${credito.operacion} CON UN SALDO DE $${pesosEscrito(credito.saldo)}`
+        ).join('\n') +
+        `\nSALDO TOTAL: $${pesosEscrito(saldoTotal)}\n5% CANCELACIÓN: $${pesosEscrito(e.cincoPorCiento)}`;
     return `Hola buenos dias.\n\nRemito para depositarle.\n\nFIRMA: DIGITAL COMPLETADA\n\nPlan seleccionado: ${renovacion ? 'RENOVACION' : 'PARALELO'}\n\nN° SOLICITUD: ${solicitud}\n\nCapital\n${pesosEscrito(e.importeFirmar)}\n\nNeto\n${pesosEscrito(e.netoBase)}\n\nEn mano\n${pesosEscrito(e.enManoFinal)}\n\nCuotas\n${e.cuotas}\n\nImporte\n${pesosEscrito(plan.cuota)}\n\nComisión:\n${pesosEscrito(e.comision)}\n\nTipo\n${tipo}\n\nLink firma digital:\n${link}\n\nMuchas gracias.`.replace(/\\n/g,'\n');
   }
 
