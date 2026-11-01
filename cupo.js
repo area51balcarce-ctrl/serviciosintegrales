@@ -364,14 +364,14 @@ function calculate(rows,globalText){
 
     // CAMBIO: antes se calculaba el 75%.
     // Ahora el cupo se calcula sobre el 70%.
-    const base70=
+    const base60=
         round2(
-            resultadoX*.70
+            resultadoX*.60
         );
 
     const cupoFinal=
         round2(
-            base70-
+            base60-
             descuentosDebajoIoma
         );
 
