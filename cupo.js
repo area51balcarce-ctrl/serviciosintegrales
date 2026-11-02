@@ -362,8 +362,7 @@ function calculate(rows,globalText){
             ioma
         );
 
-    // CAMBIO: antes se calculaba el 75%.
-    // Ahora el cupo se calcula sobre el 70%.
+    // El cupo se calcula sobre el 60%.
     const base60=
         round2(
             resultadoX*.60
@@ -383,7 +382,7 @@ function calculate(rows,globalText){
             ips:round2(ips),
             ioma:round2(ioma),
             resultadoX,
-            base70,
+            base60,
             totalDescuentosRecibo:
                 round2(totalDescuentosRecibo),
             descuentosDebajoIoma,
