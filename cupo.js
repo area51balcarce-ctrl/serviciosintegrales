@@ -1,3 +1,4 @@
+
 import * as pdfjsLib from 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.mjs';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.mjs';
@@ -362,15 +363,15 @@ function calculate(rows,globalText){
             ioma
         );
 
-    // El cupo se calcula sobre el 60%.
-    const base60=
+    // El cupo se calcula sobre el 70%.
+    const base70=
         round2(
-            resultadoX*.60
+            resultadoX*.70
         );
 
     const cupoFinal=
         round2(
-            base60-
+            base70-
             descuentosDebajoIoma
         );
 
@@ -382,7 +383,7 @@ function calculate(rows,globalText){
             ips:round2(ips),
             ioma:round2(ioma),
             resultadoX,
-            base60,
+            base70,
             totalDescuentosRecibo:
                 round2(totalDescuentosRecibo),
             descuentosDebajoIoma,
